@@ -1,335 +1,239 @@
 // src/App.jsx
-import { useState, useCallback, useRef } from 'react'
+import { useMemo, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
-import { loginRequest, graphConfig } from './authConfig'
-import * as mammoth from 'mammoth'
-import Papa from 'papaparse'
+import { loginRequest } from './authConfig'
+import { parseDocxFile, applyTemplate } from '../parseDocx'
+import { parseCsvFile } from '../parseCsv'
+import { getAccessToken, sendEmail } from '../graphApi'
 import './App.css'
-
-// ─── Graph helpers ────────────────────────────────────────────────────────────
-
-async function getAccessToken(instance, accounts) {
-  const response = await instance.acquireTokenSilent({
-    ...loginRequest,
-    account: accounts[0],
-  })
-  return response.accessToken
-}
-
-async function sendEmail(accessToken, { to, subject, htmlBody }) {
-  const mail = {
-    message: {
-      subject,
-      body: { contentType: 'HTML', content: htmlBody },
-      toRecipients: [{ emailAddress: { address: to } }],
-    },
-    saveToSentItems: true,
-  }
-  const res = await fetch(graphConfig.graphSendMailEndpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(mail),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(err)
-  }
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
+  const account = accounts[0]
 
-  const [docxHtml, setDocxHtml] = useState('')
-  const [docxName, setDocxName] = useState('')
-  const [recipients, setRecipients] = useState([]) // [{email, name, ...rest}]
-  const [csvName, setCsvName] = useState('')
+  const [docxData, setDocxData] = useState(null)
+  const [csvData, setCsvData] = useState(null)
   const [subject, setSubject] = useState('')
-  const [status, setStatus] = useState([]) // [{email, state:'pending'|'sent'|'error', msg}]
+  const [error, setError] = useState('')
+  const [selectedRecipient, setSelectedRecipient] = useState(0)
   const [sending, setSending] = useState(false)
-  const [userInfo, setUserInfo] = useState(null)
-  const docxRef = useRef()
-  const csvRef = useRef()
+  const [sendResults, setSendResults] = useState([])
 
-  // ── Auth ──
-  const handleLogin = () => instance.loginPopup(loginRequest).then(async () => {
-    const token = await getAccessToken(instance, instance.getAllAccounts())
-    const me = await fetch(graphConfig.graphMeEndpoint, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(r => r.json())
-    setUserInfo(me)
-  })
+  const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.com')
 
-  const handleLogout = () => {
-    instance.logoutPopup()
-    setUserInfo(null)
+  const handleDocxUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setError('')
+
+    try {
+      const parsed = await parseDocxFile(file)
+      setDocxData(parsed)
+      setSubject(parsed.subject || '')
+    } catch (e) {
+      setError(`DOCX parse error: ${e.message}`)
+    }
   }
 
-  // ── DOCX parse ──
-  const handleDocx = useCallback(async (e) => {
-    const file = e.target.files[0]
+  const handleCsvUpload = async (event) => {
+    const file = event.target.files?.[0]
     if (!file) return
-    setDocxName(file.name)
-    const arrayBuffer = await file.arrayBuffer()
-    const result = await mammoth.convertToHtml({ arrayBuffer })
-    setDocxHtml(result.value)
-  }, [])
+    setError('')
 
-  // ── CSV parse ──
-  const handleCsv = useCallback((e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setCsvName(file.name)
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        // Accept any column named email / Email / EMAIL / e-mail
-        const rows = results.data.map(row => {
-          const emailKey = Object.keys(row).find(k => k.toLowerCase().replace(/[-_ ]/g,'') === 'email')
-          const nameKey  = Object.keys(row).find(k => k.toLowerCase().replace(/[-_ ]/g,'') === 'name' || k.toLowerCase() === 'firstname')
-          return {
-            email: emailKey ? row[emailKey].trim() : '',
-            name:  nameKey  ? row[nameKey].trim()  : '',
-            ...row,
-          }
-        }).filter(r => r.email)
-        setRecipients(rows)
-        setStatus(rows.map(r => ({ email: r.email, state: 'pending', msg: '' })))
-      },
-    })
-  }, [])
-
-  // ── Personalise body ──
-  const buildBody = (html, row) => {
-    // Replace {{ColumnName}} placeholders with CSV values
-    return html.replace(/\{\{(\w+)\}\}/g, (_, key) => row[key] ?? '')
+    try {
+      const parsed = await parseCsvFile(file)
+      setCsvData(parsed)
+      setSelectedRecipient(0)
+    } catch (e) {
+      setError(`CSV parse error: ${e.message}`)
+    }
   }
 
-  // ── Send ──
-  const handleSend = async () => {
-    if (!docxHtml) return alert('Please upload a .docx email template.')
-    if (!recipients.length) return alert('Please upload a recipient CSV.')
-    if (!subject.trim()) return alert('Please enter a subject line.')
+  const previewRecipient = csvData?.recipients?.[selectedRecipient]
+  const previewHtml = useMemo(() => {
+    if (!docxData?.html) return ''
+    return applyTemplate(docxData.html, previewRecipient || {})
+  }, [docxData, previewRecipient])
+
+  const previewSubject = useMemo(() => {
+    if (!subject) return ''
+    return applyTemplate(subject, previewRecipient || {})
+  }, [subject, previewRecipient])
+
+  const handleSendAll = async () => {
+    if (!account) return
+    if (!isShakeEmail) {
+      setError('Please sign in with your @shakedefi.com Microsoft account.')
+      return
+    }
+    if (!docxData || !csvData?.recipients?.length) {
+      setError('Upload both a .docx and a valid .csv file first.')
+      return
+    }
+    if (!subject.trim()) {
+      setError('Email subject is required.')
+      return
+    }
 
     setSending(true)
-    let token
+    setError('')
+    setSendResults([])
+
     try {
-      token = await getAccessToken(instance, accounts)
-    } catch {
-      await instance.loginPopup(loginRequest)
-      token = await getAccessToken(instance, instance.getAllAccounts())
-    }
+      const token = await getAccessToken(instance, account, loginRequest)
 
-    const newStatus = recipients.map(r => ({ email: r.email, state: 'pending', msg: '' }))
-    setStatus([...newStatus])
+      for (const recipient of csvData.recipients) {
+        const personalizedHtml = applyTemplate(docxData.html, recipient)
+        const personalizedSubject = applyTemplate(subject, recipient)
 
-    for (let i = 0; i < recipients.length; i++) {
-      const row = recipients[i]
-      try {
-        await sendEmail(token, {
-          to: row.email,
-          subject,
-          htmlBody: buildBody(docxHtml, row),
-        })
-        newStatus[i] = { email: row.email, state: 'sent', msg: 'Sent ✓' }
-      } catch (err) {
-        newStatus[i] = { email: row.email, state: 'error', msg: err.message.slice(0, 120) }
+        try {
+          await sendEmail(
+            token,
+            recipient.email,
+            recipient.name || recipient.company || recipient.email,
+            personalizedSubject,
+            personalizedHtml
+          )
+
+          setSendResults((prev) => [...prev, { email: recipient.email, status: 'sent' }])
+        } catch (e) {
+          setSendResults((prev) => [
+            ...prev,
+            { email: recipient.email, status: 'failed', error: e.message },
+          ])
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 350))
       }
-      setStatus([...newStatus])
-      // Small delay to avoid throttling
-      await new Promise(r => setTimeout(r, 300))
+    } catch (e) {
+      setError(`Unable to send emails: ${e.message}`)
+    } finally {
+      setSending(false)
     }
-    setSending(false)
   }
 
-  const sentCount  = status.filter(s => s.state === 'sent').length
-  const errorCount = status.filter(s => s.state === 'error').length
-
-  // ── UI ──
   return (
-    <div className="shell">
-      {/* Ambient background blobs */}
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
-      <div className="blob blob-3" />
+    <main className="mailer-shell">
+      <section className="mailer-panel">
+        <h1>ShakeDeFi Marketing Mailer</h1>
 
-      <header className="top-bar">
-        <div className="brand">
-          <span className="brand-mark">⬡</span>
-          <span className="brand-name">ShakeDeFi<em>Mailer</em></span>
-        </div>
-        <div className="auth-zone">
-          {isAuthenticated ? (
-            <>
-              <span className="user-pill">
-                <span className="status-dot online" />
-                {userInfo?.mail || userInfo?.userPrincipalName || 'Signed in'}
-              </span>
-              <button className="btn btn-ghost" onClick={handleLogout}>Sign out</button>
-            </>
-          ) : (
-            <button className="btn btn-primary" onClick={handleLogin}>
-              Sign in with Microsoft
-            </button>
-          )}
-        </div>
-      </header>
-
-      <main className="content">
         {!isAuthenticated ? (
-          <section className="gate">
-            <div className="gate-inner">
-              <h1>Automated<br/>Email Campaigns</h1>
-              <p>Send personalised Exchange emails from your business account using a Word template and a CSV list.</p>
-              <button className="btn btn-primary btn-lg" onClick={handleLogin}>
-                Sign in with Microsoft
-              </button>
-              <ul className="feature-list">
-                <li>OAuth 2.0 via Microsoft Graph</li>
-                <li>Personalise with CSV columns using <code>{'{{Name}}'}</code></li>
-                <li>Emails sent from your own Exchange mailbox</li>
-                <li>Live per-recipient status</li>
-              </ul>
-            </div>
-          </section>
+          <div>
+            <p className="signed-in-text">Sign in with your @shakedefi.com Microsoft account to begin.</p>
+            <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
+              Microsoft Exchange Sign In
+            </button>
+          </div>
         ) : (
-          <div className="dashboard">
+          <div className="workflow">
+            <p className="signed-in-text">
+              Signed in as <strong>{account?.username}</strong>
+            </p>
 
-            {/* ── Step 1: Template ── */}
-            <section className="card">
-              <div className="card-num">01</div>
-              <div className="card-body">
-                <h2>Email Template</h2>
-                <p className="muted">Upload a <code>.docx</code> file. Use <code>{'{{ColumnName}}'}</code> placeholders for personalisation.</p>
-                <div
-                  className={`drop-zone ${docxHtml ? 'loaded' : ''}`}
-                  onClick={() => docxRef.current.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const dt = e.dataTransfer; if (dt.files[0]) { docxRef.current.files = dt.files; handleDocx({ target: { files: dt.files } }) } }}
-                >
-                  {docxHtml ? (
-                    <span className="file-badge">📄 {docxName}</span>
-                  ) : (
-                    <span>Drop <code>.docx</code> here or <u>click to browse</u></span>
-                  )}
-                </div>
-                <input ref={docxRef} type="file" accept=".docx" hidden onChange={handleDocx} />
-
-                {docxHtml && (
-                  <details className="preview-toggle">
-                    <summary>Preview template HTML</summary>
-                    <div className="preview-html" dangerouslySetInnerHTML={{ __html: docxHtml }} />
-                  </details>
-                )}
-              </div>
-            </section>
-
-            {/* ── Step 2: Recipients ── */}
-            <section className="card">
-              <div className="card-num">02</div>
-              <div className="card-body">
-                <h2>Recipients</h2>
-                <p className="muted">Upload a <code>.csv</code> with at least an <code>email</code> column. Any other column becomes a personalisation variable.</p>
-                <div
-                  className={`drop-zone ${recipients.length ? 'loaded' : ''}`}
-                  onClick={() => csvRef.current.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); handleCsv({ target: { files: e.dataTransfer.files } }) }}
-                >
-                  {recipients.length ? (
-                    <span className="file-badge">👥 {csvName} — <strong>{recipients.length}</strong> recipients</span>
-                  ) : (
-                    <span>Drop <code>.csv</code> here or <u>click to browse</u></span>
-                  )}
-                </div>
-                <input ref={csvRef} type="file" accept=".csv" hidden onChange={handleCsv} />
-
-                {recipients.length > 0 && (
-                  <div className="recipient-scroll">
-                    <table className="rcpt-table">
-                      <thead>
-                        <tr>
-                          {Object.keys(recipients[0]).filter(k => k !== 'email' && k !== 'name').length > 0
-                            ? ['Email', 'Name', ...Object.keys(recipients[0]).filter(k => k !== 'email' && k !== 'name')].map(h => <th key={h}>{h}</th>)
-                            : ['Email', 'Name'].map(h => <th key={h}>{h}</th>)
-                          }
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recipients.slice(0, 8).map((r, i) => (
-                          <tr key={i}>
-                            <td>{r.email}</td>
-                            <td>{r.name || '—'}</td>
-                            {Object.keys(r).filter(k => k !== 'email' && k !== 'name').map(k => <td key={k}>{r[k]}</td>)}
-                          </tr>
-                        ))}
-                        {recipients.length > 8 && (
-                          <tr><td colSpan="99" className="muted">…and {recipients.length - 8} more</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* ── Step 3: Subject & Send ── */}
-            <section className="card">
-              <div className="card-num">03</div>
-              <div className="card-body">
-                <h2>Subject & Send</h2>
-                <input
-                  className="subject-input"
-                  type="text"
-                  placeholder="Email subject line…"
-                  value={subject}
-                  onChange={e => setSubject(e.target.value)}
-                />
-                <button
-                  className={`btn btn-primary btn-send ${sending ? 'sending' : ''}`}
-                  onClick={handleSend}
-                  disabled={sending}
-                >
-                  {sending ? `Sending… ${sentCount + errorCount} / ${recipients.length}` : `Send to ${recipients.length || 0} recipients`}
-                </button>
-              </div>
-            </section>
-
-            {/* ── Status log ── */}
-            {status.length > 0 && (
-              <section className="card status-card">
-                <div className="card-num">✦</div>
-                <div className="card-body">
-                  <h2>Delivery Status</h2>
-                  <div className="summary-pills">
-                    <span className="pill pill-sent">{sentCount} sent</span>
-                    <span className="pill pill-error">{errorCount} errors</span>
-                    <span className="pill pill-pending">{status.filter(s=>s.state==='pending').length} pending</span>
-                  </div>
-                  <div className="status-list">
-                    {status.map((s, i) => (
-                      <div key={i} className={`status-row status-${s.state}`}>
-                        <span className="status-icon">
-                          {s.state === 'sent' ? '✓' : s.state === 'error' ? '✕' : '○'}
-                        </span>
-                        <span className="status-email">{s.email}</span>
-                        {s.msg && <span className="status-msg">{s.msg}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+            {!isShakeEmail && (
+              <p className="error-text">Please use a @shakedefi.com account to send campaigns.</p>
             )}
 
+            <div className="help-box">
+              <h2>Preparing your files</h2>
+              <ul>
+                <li>DOCX: first line can be <code>Subject: Your email subject</code></li>
+                <li>DOCX: or first H1 heading becomes the subject</li>
+                <li>Body supports variables like <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>, <code>{'{{customfield}}'}</code></li>
+                <li>CSV requires <code>email</code> (or <code>mail</code> / <code>emailaddress</code>)</li>
+                <li>Optional columns: <code>name</code>, <code>company</code>, and any template variables</li>
+              </ul>
+            </div>
+
+            <div className="upload-grid">
+              <label className="upload-card">
+                <span>Upload .docx email body</span>
+                <input type="file" accept=".docx" onChange={handleDocxUpload} />
+              </label>
+
+              <label className="upload-card">
+                <span>Upload .csv recipients</span>
+                <input type="file" accept=".csv" onChange={handleCsvUpload} />
+              </label>
+            </div>
+
+            {(docxData || csvData) && (
+              <div className="status-row">
+                <span>{docxData ? '✅ DOCX loaded' : '⬜ DOCX not loaded'}</span>
+                <span>
+                  {csvData
+                    ? `✅ ${csvData.recipients.length} valid recipients${csvData.skipped ? ` (${csvData.skipped} skipped)` : ''}`
+                    : '⬜ CSV not loaded'}
+                </span>
+              </div>
+            )}
+
+            <label className="subject-field">
+              Subject
+              <input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Your email subject"
+              />
+            </label>
+
+            {csvData?.recipients?.length > 0 && (
+              <div className="preview-wrap">
+                <div className="recipient-list">
+                  <h3>Recipients</h3>
+                  {csvData.recipients.map((recipient, index) => (
+                    <button
+                      key={`${recipient.email}-${index}`}
+                      className={index === selectedRecipient ? 'recipient-btn active' : 'recipient-btn'}
+                      onClick={() => setSelectedRecipient(index)}
+                    >
+                      {recipient.email}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="preview-panel">
+                  <h3>Personalized Preview</h3>
+                  <p>
+                    <strong>To:</strong> {previewRecipient?.email || '—'}
+                  </p>
+                  <p>
+                    <strong>Subject:</strong> {previewSubject || '—'}
+                  </p>
+                  <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                </div>
+              </div>
+            )}
+
+            <button
+              className="send-btn"
+              disabled={
+                sending || !isShakeEmail || !docxData || !csvData?.recipients?.length || !subject.trim()
+              }
+              onClick={handleSendAll}
+            >
+              {sending ? 'Sending…' : 'Send All Emails'}
+            </button>
+
+            {error && <p className="error-text">{error}</p>}
+
+            {sendResults.length > 0 && (
+              <div className="results">
+                <h3>Send Results</h3>
+                <ul>
+                  {sendResults.map((result, index) => (
+                    <li key={`${result.email}-${index}`}>
+                      {result.status === 'sent' ? '✅' : '❌'} {result.email}
+                      {result.error ? ` — ${result.error}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
-      </main>
-    </div>
+      </section>
+    </main>
   )
 }
