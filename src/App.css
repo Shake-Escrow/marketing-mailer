@@ -31,3 +31,9 @@
   color: inherit;
   font-size: 14px;
 }
+
+.signed-in-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

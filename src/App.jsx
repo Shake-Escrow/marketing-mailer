@@ -157,7 +157,7 @@ export default function App() {
   return (
     <main className="mailer-shell">
       <section className="mailer-panel">
-        <h1>ShakeDeFi Marketing Mailer</h1>
+        <h1>ShakeDefi Marketing</h1>
 
         {!isAuthenticated ? (
           <div>
@@ -168,9 +168,17 @@ export default function App() {
           </div>
         ) : (
           <div className="workflow">
-            <p className="signed-in-text">
-              Signed in as <strong>{account?.username}</strong>
-            </p>
+            <div className="signed-in-row">
+              <p className="signed-in-text">
+                Signed in as <strong>{account?.username}</strong>
+              </p>
+              <button
+                className="signin-btn"
+                onClick={() => instance.logoutPopup({ postLogoutRedirectUri: window.location.origin })}
+              >
+                Sign Out
+              </button>
+            </div>
 
             {!isShakeEmail && (
               <p className="error-text">Please use a @shakedefi.com account to send campaigns.</p>
