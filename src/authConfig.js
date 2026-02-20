@@ -1,8 +1,8 @@
 // src/authConfig.js
 export const msalConfig = {
   auth: {
-    clientId: 'f3699af3-13a6-42c4-804d-7bbc7a2f432c',
-    authority: 'https://login.microsoftonline.com/f8cdef31-a31e-4b4a-93e4-5f571e91255a',
+    clientId: '0b4519f6-3e5a-4bc7-927c-219b9104825b',
+    authority: 'https://login.microsoftonline.com/76ef6c29-fcf7-4941-9312-3a70fb1abd8b',
     redirectUri: window.location.origin,
   },
   cache: {
