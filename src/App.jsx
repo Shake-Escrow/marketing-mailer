@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest } from './authConfig'
 import { parseDocxFile, applyTemplate } from '../parseDocx'
-import { parseCsvFile } from '../parseCsv'
+import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { getAccessToken, sendEmail } from '../graphApi'
 import './App.css'
 
@@ -19,6 +19,7 @@ export default function App() {
   const [selectedRecipient, setSelectedRecipient] = useState(0)
   const [sending, setSending] = useState(false)
   const [sendResults, setSendResults] = useState([])
+  const [updatedCsvContent, setUpdatedCsvContent] = useState('')
 
   const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.com')
 
@@ -79,9 +80,17 @@ export default function App() {
     setSending(true)
     setError('')
     setSendResults([])
+    setUpdatedCsvContent('')
 
     try {
       const token = await getAccessToken(instance, account, loginRequest)
+      const updatedRows = (csvData.rows || []).map((row) => ({ ...row }))
+      const updatedHeaders = [...(csvData.headers || [])]
+
+      const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
+      if (!updatedHeaders.includes(lastContactedKey)) {
+        updatedHeaders.push(lastContactedKey)
+      }
 
       for (const recipient of csvData.recipients) {
         const personalizedHtml = applyTemplate(docxData.html, recipient)
@@ -96,6 +105,11 @@ export default function App() {
             personalizedHtml
           )
 
+          const rowIndex = recipient.__rowIndex
+          if (rowIndex !== undefined && updatedRows[rowIndex]) {
+            updatedRows[rowIndex][lastContactedKey] = new Date().toISOString()
+          }
+
           setSendResults((prev) => [...prev, { email: recipient.email, status: 'sent' }])
         } catch (e) {
           setSendResults((prev) => [
@@ -106,11 +120,38 @@ export default function App() {
 
         await new Promise((resolve) => setTimeout(resolve, 350))
       }
+
+      const csvOutput = serializeCsv(updatedHeaders, updatedRows)
+      setUpdatedCsvContent(csvOutput)
+      setCsvData((prev) =>
+        prev
+          ? {
+              ...prev,
+              rows: updatedRows,
+              headers: updatedHeaders,
+              lastContactedKey,
+            }
+          : prev
+      )
     } catch (e) {
       setError(`Unable to send emails: ${e.message}`)
     } finally {
       setSending(false)
     }
+  }
+
+  const handleDownloadUpdatedCsv = () => {
+    if (!updatedCsvContent) return
+
+    const blob = new Blob([updatedCsvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `recipients-updated-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -229,6 +270,12 @@ export default function App() {
                     </li>
                   ))}
                 </ul>
+
+                {updatedCsvContent && (
+                  <button className="send-btn" onClick={handleDownloadUpdatedCsv}>
+                    Download Updated CSV
+                  </button>
+                )}
               </div>
             )}
           </div>
