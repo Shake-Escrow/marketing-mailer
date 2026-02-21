@@ -5,6 +5,7 @@ import { loginRequest } from './authConfig'
 import { parseDocxFile, applyTemplate } from '../parseDocx'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { getAccessToken, sendEmail } from '../graphApi'
+import Header from './components/Header'
 import './App.css'
 
 export default function App() {
@@ -155,36 +156,25 @@ export default function App() {
   }
 
   return (
-    <main className="mailer-shell">
-      <section className="mailer-panel">
-        <h1>ShakeDefi Marketing</h1>
+    <>
+      <Header account={account} isAuthenticated={isAuthenticated} instance={instance} />
 
-        {!isAuthenticated ? (
-          <div>
-            <p className="signed-in-text">Sign in with your @shakedefi.com Microsoft account to begin.</p>
-            <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
-              Microsoft Exchange Sign In
-            </button>
-          </div>
-        ) : (
-          <div className="workflow">
-            <div className="signed-in-row">
-              <p className="signed-in-text">
-                Signed in as <strong>{account?.username}</strong>
-              </p>
-              <button
-                className="signin-btn"
-                onClick={() => instance.logoutPopup({ postLogoutRedirectUri: window.location.origin })}
-              >
-                Sign Out
+      <main className="mailer-shell">
+        <section className="mailer-panel">
+          {!isAuthenticated ? (
+            <div>
+              <p className="signed-in-text">Sign in with your @shakedefi.com Microsoft account to begin.</p>
+              <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
+                Microsoft Exchange Sign In
               </button>
             </div>
+          ) : (
+            <div className="workflow">
+              {!isShakeEmail && (
+                <p className="error-text">Please use a @shakedefi.com account to send campaigns.</p>
+              )}
 
-            {!isShakeEmail && (
-              <p className="error-text">Please use a @shakedefi.com account to send campaigns.</p>
-            )}
-
-            <div className="help-box">
+              <div className="help-box">
               <h2>Preparing your files</h2>
               <ul>
                 <li>DOCX: first line can be <code>Subject: Your email subject</code></li>
@@ -267,28 +257,29 @@ export default function App() {
 
             {error && <p className="error-text">{error}</p>}
 
-            {sendResults.length > 0 && (
-              <div className="results">
-                <h3>Send Results</h3>
-                <ul>
-                  {sendResults.map((result, index) => (
-                    <li key={`${result.email}-${index}`}>
-                      {result.status === 'sent' ? '✅' : '❌'} {result.email}
-                      {result.error ? ` — ${result.error}` : ''}
-                    </li>
-                  ))}
-                </ul>
+              {sendResults.length > 0 && (
+                <div className="results">
+                  <h3>Send Results</h3>
+                  <ul>
+                    {sendResults.map((result, index) => (
+                      <li key={`${result.email}-${index}`}>
+                        {result.status === 'sent' ? '✅' : '❌'} {result.email}
+                        {result.error ? ` — ${result.error}` : ''}
+                      </li>
+                    ))}
+                  </ul>
 
-                {updatedCsvContent && (
-                  <button className="send-btn" onClick={handleDownloadUpdatedCsv}>
-                    Download Updated CSV
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-    </main>
+                  {updatedCsvContent && (
+                    <button className="send-btn" onClick={handleDownloadUpdatedCsv}>
+                      Download Updated CSV
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </main>
+    </>
   )
 }

@@ -1,5 +1,4 @@
 // src/components/Header.jsx
-import { loginRequest } from '../authConfig'
 import styles from './Header.module.css' // or however you import styles
 
 export default function Header({ account, isAuthenticated, instance }) {
@@ -9,7 +8,7 @@ export default function Header({ account, isAuthenticated, instance }) {
 
   return (
     <header className={styles.header}>
-      <div className={styles.logo}>Marketing Mailer</div>
+      <div className={styles.logo}>ShakeDefi Marketing</div>
       {isAuthenticated && account && (
         <div className={styles.userArea}>
           <span className={styles.username}>{account.username}</span>
