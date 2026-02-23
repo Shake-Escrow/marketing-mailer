@@ -25,19 +25,40 @@ function normalizeRow(row = {}) {
   return normalized
 }
 
-function capitalizeNamePart(part = '') {
-  const p = part.trim()
-  if (!p) return ''
-  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()
+/**
+ * Title-cases a name string, treating both spaces and hyphens as word
+ * boundaries. This correctly handles:
+ *   "al masri"   → "Al Masri"
+ *   "al-rayyes"  → "Al-Rayyes"
+ *   "nabooda"    → "Nabooda"
+ *   ""           → ""
+ */
+function titleCaseName(name = '') {
+  const n = name.trim()
+  if (!n) return ''
+
+  // Split on hyphens while keeping the delimiter, then capitalize each segment.
+  // e.g. "al-rayyes" → ["al", "-", "rayyes"] → "Al-Rayyes"
+  return n
+    .split(/(-|\s+)/)
+    .map((part) => {
+      if (!part || /^(-|\s+)$/.test(part)) return part // preserve delimiters
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+    })
+    .join('')
+    // Collapse any runs of whitespace back to a single space
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function pickNameParts(normalizedRow = {}) {
   const fullName = (normalizedRow.full_name || normalizedRow.fullname || '').trim()
   if (fullName) {
-    const [firstRaw = '', ...rest] = fullName.split(/\s+/)
-    const lastRaw = rest.join(' ')
-    const first = capitalizeNamePart(firstRaw)
-    const last = capitalizeNamePart(lastRaw)
+    const parts = fullName.split(/\s+/)
+    const firstRaw = parts[0] || ''
+    const lastRaw = parts.slice(1).join(' ')
+    const first = titleCaseName(firstRaw)
+    const last = titleCaseName(lastRaw)
     return {
       first,
       last,
@@ -47,10 +68,10 @@ function pickNameParts(normalizedRow = {}) {
 
   const firstRaw = normalizedRow.first_name || normalizedRow.firstname || ''
   const lastRaw = normalizedRow.last_name || normalizedRow.lastname || ''
-  const first = capitalizeNamePart(firstRaw)
-  const last = capitalizeNamePart(lastRaw)
+  const first = titleCaseName(firstRaw)
+  const last = titleCaseName(lastRaw)
 
-  const direct = capitalizeNamePart(normalizedRow.name || normalizedRow.contact || '')
+  const direct = titleCaseName(normalizedRow.name || normalizedRow.contact || '')
   return {
     first,
     last,
