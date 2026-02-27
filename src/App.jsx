@@ -22,7 +22,7 @@ export default function App() {
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
 
-  const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.com')
+  const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.email')
 
   const handleDocxUpload = async (event) => {
     const file = event.target.files?.[0]
@@ -66,7 +66,7 @@ export default function App() {
   const handleSendAll = async () => {
     if (!account) return
     if (!isShakeEmail) {
-      setError('Please sign in with your @shakedefi.com Microsoft account.')
+      setError('Please sign in with your @shakedefi.email Microsoft account.')
       return
     }
     if (!docxData || !csvData?.recipients?.length) {
@@ -163,7 +163,7 @@ export default function App() {
         <section className="mailer-panel">
           {!isAuthenticated ? (
             <div>
-              <p className="signed-in-text">Sign in with your @shakedefi.com Microsoft account to begin.</p>
+              <p className="signed-in-text">Sign in with your @shakedefi.email Microsoft account to begin.</p>
               <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
                 Microsoft Exchange Sign In
               </button>
@@ -171,7 +171,7 @@ export default function App() {
           ) : (
             <div className="workflow">
               {!isShakeEmail && (
-                <p className="error-text">Please use a @shakedefi.com account to send campaigns.</p>
+                <p className="error-text">Please use a @shakedefi.email account to send campaigns.</p>
               )}
 
               <div className="help-box">

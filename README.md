@@ -111,7 +111,7 @@ bob@example.com,Bob Jones,Globex
 
 ### Sending
 
-1. Sign in with your `@shakedefi.com` Microsoft account
+1. Sign in with your `@shakedefi.email` Microsoft account
 2. Upload the `.docx` and `.csv` files
 3. Verify/edit the subject line
 4. Click **Review & Preview** — click recipients to preview personalized emails
