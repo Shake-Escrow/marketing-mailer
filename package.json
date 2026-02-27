@@ -2,7 +2,7 @@
   "name": "shakedefi-marketing-mailer",
   "private": true,
   "version": "1.0.0",
-  "homepage": "https://marketing.shakedefi.com",
+  "homepage": "https://shakedefi.email",
   "type": "module",
   "scripts": {
     "dev": "vite",
