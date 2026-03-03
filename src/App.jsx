@@ -8,6 +8,24 @@ import { getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import './App.css'
 
+const formatLocalTimestamp = (date = new Date()) => {
+  const pad = (value) => String(value).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const seconds = pad(date.getSeconds())
+
+  const offsetMinutes = -date.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absOffset = Math.abs(offsetMinutes)
+  const offsetHours = pad(Math.floor(absOffset / 60))
+  const offsetRemainderMinutes = pad(absOffset % 60)
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainderMinutes}`
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -108,7 +126,7 @@ export default function App() {
 
           const rowIndex = recipient.__rowIndex
           if (rowIndex !== undefined && updatedRows[rowIndex]) {
-            updatedRows[rowIndex][lastContactedKey] = new Date().toISOString()
+            updatedRows[rowIndex][lastContactedKey] = formatLocalTimestamp()
           }
 
           setSendResults((prev) => [...prev, { email: recipient.email, status: 'sent' }])
@@ -148,7 +166,8 @@ export default function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `recipients-updated-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+    const filenameTimestamp = formatLocalTimestamp().replace(/[:+]/g, '-')
+    link.download = `recipients-updated-${filenameTimestamp}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
