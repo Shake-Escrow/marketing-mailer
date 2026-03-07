@@ -117,6 +117,8 @@ export function parseCsvFile(file) {
 
         let skippedInvalidEmail = 0
         let skippedPreviouslyContacted = 0
+        let skippedDuplicateEmail = 0
+        const seenEmails = new Set()
 
         const recipients = rows
           .map((row, rowIndex) => {
@@ -130,11 +132,17 @@ export function parseCsvFile(file) {
               return null
             }
 
-            const email = (row[emailKey] || '').trim()
+            const email = (row[emailKey] || '').trim().toLowerCase()
             if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
               skippedInvalidEmail += 1
               return null
             }
+
+            if (seenEmails.has(email)) {
+              skippedDuplicateEmail += 1
+              return null
+            }
+            seenEmails.add(email)
 
             const normalizedRow = normalizeRow(row)
             const nameParts = pickNameParts(normalizedRow)
@@ -180,6 +188,7 @@ export function parseCsvFile(file) {
           skipped: rows.length - recipients.length,
           skippedInvalidEmail,
           skippedPreviouslyContacted,
+          skippedDuplicateEmail,
           headers,
           rows,
           lastContactedKey,

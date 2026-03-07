@@ -1,10 +1,10 @@
 // src/App.jsx
 import { useMemo, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
-import { loginRequest } from './authConfig'
+import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseDocxFile, applyTemplate } from '../parseDocx'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, createMarketingContact, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import './App.css'
 
@@ -24,6 +24,12 @@ const formatLocalTimestamp = (date = new Date()) => {
   const offsetRemainderMinutes = pad(absOffset % 60)
 
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainderMinutes}`
+}
+
+const getResultIcon = (status) => {
+  if (status === 'sent') return '✅'
+  if (status === 'skipped-existing' || status === 'skipped-duplicate') return '⏭️'
+  return '❌'
 }
 
 export default function App() {
@@ -102,9 +108,11 @@ export default function App() {
     setUpdatedCsvContent('')
 
     try {
-      const token = await getAccessToken(instance, account, loginRequest)
+      const graphToken = await getAccessToken(instance, account, loginRequest)
+      const marketingContactsToken = await getAccessToken(instance, account, marketingContactsRequest)
       const updatedRows = (csvData.rows || []).map((row) => ({ ...row }))
       const updatedHeaders = [...(csvData.headers || [])]
+      const processedEmails = new Set()
 
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
       if (!updatedHeaders.includes(lastContactedKey)) {
@@ -112,13 +120,39 @@ export default function App() {
       }
 
       for (const recipient of csvData.recipients) {
+        const normalizedEmail = (recipient.email || '').trim().toLowerCase()
+
+        if (processedEmails.has(normalizedEmail)) {
+          setSendResults((prev) => [
+            ...prev,
+            { email: normalizedEmail || recipient.email, status: 'skipped-duplicate' },
+          ])
+          continue
+        }
+        processedEmails.add(normalizedEmail)
+
         const personalizedHtml = applyTemplate(docxData.html, recipient)
         const personalizedSubject = applyTemplate(subject, recipient)
 
         try {
+          const contactPayload = buildMarketingContactPayload(recipient)
+          const marketingContactResult = await createMarketingContact(
+            marketingContactsToken,
+            contactPayload,
+            { clientId: account.username }
+          )
+
+          if (!marketingContactResult.created) {
+            setSendResults((prev) => [
+              ...prev,
+              { email: normalizedEmail, status: 'skipped-existing' },
+            ])
+            continue
+          }
+
           await sendEmail(
-            token,
-            recipient.email,
+            graphToken,
+            normalizedEmail,
             recipient.name || recipient.company || recipient.email,
             personalizedSubject,
             personalizedHtml
@@ -227,6 +261,14 @@ export default function App() {
               </div>
             )}
 
+            {csvData && (
+              <div className="status-row">
+                <span>{csvData.skippedInvalidEmail ? `⚠️ ${csvData.skippedInvalidEmail} invalid emails skipped` : '✅ No invalid emails'}</span>
+                <span>{csvData.skippedPreviouslyContacted ? `⏭️ ${csvData.skippedPreviouslyContacted} previously contacted skipped` : '✅ No previously contacted rows'}</span>
+                <span>{csvData.skippedDuplicateEmail ? `⏭️ ${csvData.skippedDuplicateEmail} duplicate emails skipped` : '✅ No duplicate emails'}</span>
+              </div>
+            )}
+
             <label className="subject-field">
               Subject
               <input
@@ -282,7 +324,9 @@ export default function App() {
                   <ul>
                     {sendResults.map((result, index) => (
                       <li key={`${result.email}-${index}`}>
-                        {result.status === 'sent' ? '✅' : '❌'} {result.email}
+                        {getResultIcon(result.status)} {result.email}
+                        {result.status === 'skipped-existing' ? ' — already existed in marketing contacts, email not sent' : ''}
+                        {result.status === 'skipped-duplicate' ? ' — duplicate CSV row, skipped' : ''}
                         {result.error ? ` — ${result.error}` : ''}
                       </li>
                     ))}
