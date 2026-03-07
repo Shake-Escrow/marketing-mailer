@@ -2,10 +2,10 @@
 import { useMemo, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
-import { parseDocxFile, applyTemplate } from '../parseDocx'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, createMarketingContact, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
+import { applyTemplate } from './utils/template'
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -46,6 +46,13 @@ export default function App() {
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
 
+  let parseDocxModulePromise
+
+  const loadParseDocxModule = async () => {
+    parseDocxModulePromise ??= import('../parseDocx')
+    return parseDocxModulePromise
+  }
+
   const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.email')
 
   const handleDocxUpload = async (event) => {
@@ -54,6 +61,7 @@ export default function App() {
     setError('')
 
     try {
+      const { parseDocxFile } = await loadParseDocxModule()
       const parsed = await parseDocxFile(file)
       setDocxData(parsed)
       setSubject(parsed.subject || '')

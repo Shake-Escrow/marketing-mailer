@@ -1,6 +1,8 @@
 // src/utils/parseDocx.js
 import mammoth from 'mammoth'
 
+export { applyTemplate } from './src/utils/template.js'
+
 /**
  * Converts a .docx File to HTML using mammoth.
  * Also extracts a plain-text version.
@@ -120,16 +122,4 @@ function normalizeDearGreeting(rootEl) {
       }
     )
   }
-}
-
-/**
- * Applies simple {{variable}} template substitution to an HTML string.
- * Variables are matched against the recipient's data keys.
- * e.g. "Hello {{name}}" + { name: "Alice" } → "Hello Alice"
- */
-export function applyTemplate(html, variables) {
-  return html.replace(/\{\{(\s*[\w.-]+\s*)\}\}/g, (match, key) => {
-    const k = key.trim().toLowerCase()
-    return variables[k] !== undefined ? variables[k] : match
-  })
 }

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 export default defineConfig({
   plugins: [react()],
   build: {
+    chunkSizeWarningLimit: 550,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
