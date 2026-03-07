@@ -171,6 +171,28 @@ export async function createMarketingContact(accessToken, contactPayload, option
   }
 }
 
+export async function unsubscribeMarketingContact(email) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/unsubscribe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  })
+
+  const responseBody = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error || `HTTP ${response.status}`)
+  }
+
+  return {
+    unsubscribed: responseBody.unsubscribed !== false,
+    contact: responseBody.contact || null,
+  }
+}
+
 /**
  * Fetches the signed-in user's display info from Graph.
  */
