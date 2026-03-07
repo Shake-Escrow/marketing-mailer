@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VITE_MESSAGEHUB_BASE_URL: https://shake-hub-eeg4gtecepcfepcm.canadacentral-01.azurewebsites.net
     steps:
       - uses: actions/checkout@v4
 

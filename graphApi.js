@@ -70,7 +70,22 @@ export async function sendEmail(accessToken, toEmail, toName, subject, htmlBody,
 
 function getMarketingContactsBaseUrl() {
   const configuredBaseUrl = (import.meta.env.VITE_MESSAGEHUB_BASE_URL || '').trim()
-  return (configuredBaseUrl || window.location.origin).replace(/\/+$/, '')
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/+$/, '')
+  }
+
+  const currentOrigin = window.location.origin.replace(/\/+$/, '')
+  const currentHostname = window.location.hostname.toLowerCase()
+
+  if (
+    currentHostname === 'shakedefi.email' ||
+    currentHostname === 'www.shakedefi.email'
+  ) {
+    return 'https://shake-hub-eeg4gtecepcfepcm.canadacentral-01.azurewebsites.net'
+  }
+
+  return currentOrigin
 }
 
 export function buildMarketingContactPayload(recipient = {}) {
