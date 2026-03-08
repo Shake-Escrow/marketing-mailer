@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
@@ -32,10 +32,36 @@ const getResultIcon = (status) => {
   return '❌'
 }
 
+const formatSendResultLine = (result) => {
+  const statusLabel = {
+    sent: 'SENT',
+    'skipped-existing': 'SKIP',
+    'skipped-duplicate': 'SKIP',
+    failed: 'FAIL',
+  }[result.status] || 'INFO'
+
+  let line = `${getResultIcon(result.status)} [${statusLabel}] ${result.email}`
+
+  if (result.status === 'skipped-existing') {
+    line += ' — already existed in marketing contacts, email not sent'
+  }
+
+  if (result.status === 'skipped-duplicate') {
+    line += ' — duplicate CSV row, skipped'
+  }
+
+  if (result.error) {
+    line += ` — ${result.error}`
+  }
+
+  return line
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
   const account = accounts[0]
+  const sendLogRef = useRef(null)
 
   const [docxData, setDocxData] = useState(null)
   const [csvData, setCsvData] = useState(null)
@@ -94,6 +120,11 @@ export default function App() {
     if (!subject) return ''
     return applyTemplate(subject, previewRecipient || {})
   }, [subject, previewRecipient])
+
+  useEffect(() => {
+    if (!sendLogRef.current) return
+    sendLogRef.current.scrollTop = sendLogRef.current.scrollHeight
+  }, [sendResults, sending])
 
   const handleSendAll = async () => {
     if (!account) return
@@ -326,19 +357,34 @@ export default function App() {
 
             {error && <p className="error-text">{error}</p>}
 
-              {sendResults.length > 0 && (
+              {(sending || sendResults.length > 0) && (
                 <div className="results">
-                  <h3>Send Results</h3>
-                  <ul>
+                  <div className="results-header">
+                    <h3>Send Log</h3>
+                    {sending && <span className="results-status">Dispatch in progress…</span>}
+                  </div>
+
+                  <div
+                    ref={sendLogRef}
+                    className="console-output"
+                    role="log"
+                    aria-live="polite"
+                    aria-label="Email send console output"
+                  >
+                    {sendResults.length === 0 && (
+                      <div className="console-line console-line--muted">Waiting for send output…</div>
+                    )}
+
                     {sendResults.map((result, index) => (
-                      <li key={`${result.email}-${index}`}>
-                        {getResultIcon(result.status)} {result.email}
-                        {result.status === 'skipped-existing' ? ' — already existed in marketing contacts, email not sent' : ''}
-                        {result.status === 'skipped-duplicate' ? ' — duplicate CSV row, skipped' : ''}
-                        {result.error ? ` — ${result.error}` : ''}
-                      </li>
+                      <div key={`${result.email}-${index}`} className="console-line">
+                        {formatSendResultLine(result)}
+                      </div>
                     ))}
-                  </ul>
+
+                    {sending && (
+                      <div className="console-line console-line--muted">Processing next recipient…</div>
+                    )}
+                  </div>
 
                   {updatedCsvContent && (
                     <button className="send-btn" onClick={handleDownloadUpdatedCsv}>
