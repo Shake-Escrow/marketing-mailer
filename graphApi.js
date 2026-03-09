@@ -197,7 +197,7 @@ export async function createMarketingContact(accessToken, contactPayload, option
   }
 
   return {
-    created: responseBody.created !== false,
+    contacted: responseBody.contacted === true,
     contact: responseBody.contact || null,
   }
 }

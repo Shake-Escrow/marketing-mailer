@@ -28,22 +28,22 @@ const formatLocalTimestamp = (date = new Date()) => {
 
 const getResultIcon = (status) => {
   if (status === 'sent') return '✅'
-  if (status === 'skipped-existing' || status === 'skipped-duplicate') return '⏭️'
+  if (status === 'skipped-contacted' || status === 'skipped-duplicate') return '⏭️'
   return '❌'
 }
 
 const formatSendResultLine = (result) => {
   const statusLabel = {
     sent: 'SENT',
-    'skipped-existing': 'SKIP',
+    'skipped-contacted': 'SKIP',
     'skipped-duplicate': 'SKIP',
     failed: 'FAIL',
   }[result.status] || 'INFO'
 
   let line = `${getResultIcon(result.status)} [${statusLabel}] ${result.email}`
 
-  if (result.status === 'skipped-existing') {
-    line += ' — already existed in marketing contacts, email not sent'
+  if (result.status === 'skipped-contacted') {
+    line += ' — already contacted in marketing contacts, email not sent'
   }
 
   if (result.status === 'skipped-duplicate') {
@@ -186,11 +186,11 @@ export default function App() {
             }
           )
 
-          if (!marketingContactResult.created) {
+          if (marketingContactResult.contacted) {
             previousSuccessfulEmail = null
             setSendResults((prev) => [
               ...prev,
-              { email: normalizedEmail, status: 'skipped-existing' },
+              { email: normalizedEmail, status: 'skipped-contacted' },
             ])
             continue
           }
