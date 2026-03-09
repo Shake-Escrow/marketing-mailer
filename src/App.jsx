@@ -152,6 +152,7 @@ export default function App() {
       const updatedRows = (csvData.rows || []).map((row) => ({ ...row }))
       const updatedHeaders = [...(csvData.headers || [])]
       const processedEmails = new Set()
+      let previousSuccessfulEmail = null
 
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
       if (!updatedHeaders.includes(lastContactedKey)) {
@@ -162,6 +163,7 @@ export default function App() {
         const normalizedEmail = (recipient.email || '').trim().toLowerCase()
 
         if (processedEmails.has(normalizedEmail)) {
+          previousSuccessfulEmail = null
           setSendResults((prev) => [
             ...prev,
             { email: normalizedEmail || recipient.email, status: 'skipped-duplicate' },
@@ -178,10 +180,14 @@ export default function App() {
           const marketingContactResult = await createMarketingContact(
             marketingContactsToken,
             contactPayload,
-            { clientId: account.username }
+            {
+              clientId: account.username,
+              previousSuccessfulEmail,
+            }
           )
 
           if (!marketingContactResult.created) {
+            previousSuccessfulEmail = null
             setSendResults((prev) => [
               ...prev,
               { email: normalizedEmail, status: 'skipped-existing' },
@@ -202,8 +208,10 @@ export default function App() {
             updatedRows[rowIndex][lastContactedKey] = formatLocalTimestamp()
           }
 
+          previousSuccessfulEmail = normalizedEmail
           setSendResults((prev) => [...prev, { email: recipient.email, status: 'sent' }])
         } catch (e) {
+          previousSuccessfulEmail = null
           setSendResults((prev) => [
             ...prev,
             { email: recipient.email, status: 'failed', error: e.message },
@@ -211,6 +219,18 @@ export default function App() {
         }
 
         await new Promise((resolve) => setTimeout(resolve, 350))
+      }
+
+      if (previousSuccessfulEmail) {
+        await createMarketingContact(
+          marketingContactsToken,
+          null,
+          {
+            clientId: account.username,
+            previousSuccessfulEmail,
+            skipContactCreate: true,
+          }
+        )
       }
 
       const csvOutput = serializeCsv(updatedHeaders, updatedRows)

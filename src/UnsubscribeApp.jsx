@@ -42,7 +42,7 @@ export default function UnsubscribeApp() {
   return (
     <main className="unsubscribe-shell">
       <section className="unsubscribe-card">
-        <h1>Unsubscribe</h1>
+        <h1>Unsubscribe from Shake Defi</h1>
         <p className="unsubscribe-instructions">Enter your email address to unsubscribe</p>
 
         <form className="unsubscribe-form" onSubmit={handleSubmit}>

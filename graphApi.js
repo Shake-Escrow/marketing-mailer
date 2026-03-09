@@ -164,6 +164,22 @@ export function buildMarketingContactPayload(recipient = {}) {
 
 export async function createMarketingContact(accessToken, contactPayload, options = {}) {
   const apiBaseUrl = getMarketingContactsBaseUrl()
+  const hasContactPayload = Boolean(
+    contactPayload && typeof contactPayload === 'object' && Object.keys(contactPayload).length > 0
+  )
+  const requestBody = options.previousSuccessfulEmail || options.skipContactCreate
+    ? {
+        ...(hasContactPayload ? { contact: contactPayload } : {}),
+        ...(options.previousSuccessfulEmail
+          ? {
+              previousSuccessfulSend: {
+                email: String(options.previousSuccessfulEmail).trim().toLowerCase(),
+              },
+            }
+          : {}),
+      }
+    : contactPayload
+
   const response = await fetch(`${apiBaseUrl}/api/marketing/contacts`, {
     method: 'POST',
     headers: {
@@ -171,7 +187,7 @@ export async function createMarketingContact(accessToken, contactPayload, option
       'Content-Type': 'application/json',
       ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
     },
-    body: JSON.stringify(contactPayload),
+    body: JSON.stringify(requestBody),
   })
 
   const responseBody = await response.json().catch(() => ({}))
