@@ -38,6 +38,17 @@
   gap: 12px;
 }
 
+.subject-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subject-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .upload-grid {
   display: flex;
   flex-direction: column;
