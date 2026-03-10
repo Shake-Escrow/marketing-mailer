@@ -202,6 +202,35 @@ export async function createMarketingContact(accessToken, contactPayload, option
   }
 }
 
+export async function checkMarketingContact(accessToken, email, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/check`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+    body: JSON.stringify({
+      email: String(email || '').trim().toLowerCase(),
+    }),
+  })
+
+  const responseBody = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error || `HTTP ${response.status}`)
+  }
+
+  return {
+    emailable: responseBody.emailable === true,
+    reason: responseBody.reason || null,
+    rationale: responseBody.rationale || responseBody.assessment?.rationale || null,
+    contact: responseBody.contact || null,
+    assessment: responseBody.assessment || null,
+  }
+}
+
 export async function unsubscribeMarketingContact(email) {
   const apiBaseUrl = getMarketingContactsBaseUrl()
   const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/unsubscribe`, {

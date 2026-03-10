@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, createMarketingContact, getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate } from './utils/template'
 import './App.css'
@@ -28,8 +28,21 @@ const formatLocalTimestamp = (date = new Date()) => {
 
 const getResultIcon = (status) => {
   if (status === 'sent') return '✅'
+  if (status === 'skipped-not-emailable') return '🚫'
   if (status === 'skipped-contacted' || status === 'skipped-duplicate') return '⏭️'
   return '❌'
+}
+
+const formatEligibilityReason = (reason) => {
+  const labels = {
+    contact_not_found: 'contact not found',
+    contact_inactive: 'contact inactive',
+    contact_unsubscribed: 'contact unsubscribed',
+    domain_not_assessed: 'domain not assessed',
+    domain_not_appropriate: 'domain not appropriate',
+  }
+
+  return labels[reason] || reason || ''
 }
 
 const formatSendResultLine = (result) => {
@@ -37,6 +50,7 @@ const formatSendResultLine = (result) => {
     sent: 'SENT',
     'skipped-contacted': 'SKIP',
     'skipped-duplicate': 'SKIP',
+    'skipped-not-emailable': 'SKIP',
     failed: 'FAIL',
   }[result.status] || 'INFO'
 
@@ -48,6 +62,14 @@ const formatSendResultLine = (result) => {
 
   if (result.status === 'skipped-duplicate') {
     line += ' — duplicate CSV row, skipped'
+  }
+
+  if (result.status === 'skipped-not-emailable') {
+    line += ` — ${formatEligibilityReason(result.reason) || 'contact is not emailable'}`
+  }
+
+  if (result.rationale) {
+    line += ` — rationale: ${result.rationale}`
   }
 
   if (result.error) {
@@ -195,6 +217,28 @@ export default function App() {
             continue
           }
 
+          const contactEligibility = await checkMarketingContact(
+            marketingContactsToken,
+            normalizedEmail,
+            {
+              clientId: account.username,
+            }
+          )
+
+          if (!contactEligibility.emailable) {
+            previousSuccessfulEmail = null
+            setSendResults((prev) => [
+              ...prev,
+              {
+                email: normalizedEmail,
+                status: 'skipped-not-emailable',
+                reason: contactEligibility.reason,
+                rationale: contactEligibility.rationale,
+              },
+            ])
+            continue
+          }
+
           await sendEmail(
             graphToken,
             normalizedEmail,
@@ -209,7 +253,14 @@ export default function App() {
           }
 
           previousSuccessfulEmail = normalizedEmail
-          setSendResults((prev) => [...prev, { email: recipient.email, status: 'sent' }])
+          setSendResults((prev) => [
+            ...prev,
+            {
+              email: recipient.email,
+              status: 'sent',
+              rationale: contactEligibility.rationale,
+            },
+          ])
         } catch (e) {
           previousSuccessfulEmail = null
           setSendResults((prev) => [
