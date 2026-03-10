@@ -141,13 +141,58 @@ export function buildMarketingContactPayload(recipient = {}) {
     'enrichment_accepted_at',
   ]
 
+  const intFields = new Set(['company_id', 'employee_count'])
+  const numericFields = new Set(['annual_revenue', 'validation_score'])
+  const boolFields = new Set(['is_active_contact', 'is_validated', 'has_enrichment'])
+
+  const coerceNumber = (value) => {
+    const cleaned = String(value)
+      .trim()
+      .replace(/[$,%\s]/g, '')
+      .replace(/,/g, '')
+    if (!cleaned) return null
+    return /^-?\d+(\.\d+)?$/.test(cleaned) ? cleaned : null
+  }
+
+  const coerceInt = (value) => {
+    const cleaned = String(value).trim().replace(/,/g, '')
+    if (!cleaned) return null
+    return /^-?\d+$/.test(cleaned) ? String(parseInt(cleaned, 10)) : null
+  }
+
+  const coerceBool = (value) => {
+    if (typeof value === 'boolean') return value
+    const normalized = String(value).trim().toLowerCase()
+    if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+    if (['false', '0', 'no', 'n'].includes(normalized)) return false
+    return null
+  }
+
   const payload = {}
 
   supportedFields.forEach((field) => {
     const value = recipient[field]
-    if (value !== undefined && value !== null && String(value).trim() !== '') {
-      payload[field] = value
+    if (value === undefined || value === null || String(value).trim() === '') return
+
+    if (numericFields.has(field)) {
+      const normalized = coerceNumber(value)
+      if (normalized !== null) payload[field] = normalized
+      return
     }
+
+    if (intFields.has(field)) {
+      const normalized = coerceInt(value)
+      if (normalized !== null) payload[field] = normalized
+      return
+    }
+
+    if (boolFields.has(field)) {
+      const normalized = coerceBool(value)
+      if (normalized !== null) payload[field] = normalized
+      return
+    }
+
+    payload[field] = value
   })
 
   if (!payload.email && recipient.email) {
