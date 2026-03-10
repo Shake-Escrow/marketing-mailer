@@ -212,15 +212,23 @@ export default function App() {
     setUpdatedCsvContent('')
 
     try {
-      const graphToken = canSendEmails
-        ? await getAccessToken(instance, account, loginRequest)
-        : null
+      let graphToken = null
+      if (canSendEmails) {
+        graphToken = await getAccessToken(instance, account, loginRequest)
+      }
 
-      const marketingContactsToken = await getAccessToken(
-        instance,
-        account,
-        marketingContactsRequest
-      )
+      let marketingContactsToken = null
+      try {
+        marketingContactsToken = await getAccessToken(
+          instance,
+          account,
+          marketingContactsRequest
+        )
+      } catch (e) {
+        throw new Error(
+          `Unable to acquire MessageHub API token. Check VITE_MESSAGEHUB_API_SCOPE_URI / VITE_MESSAGEHUB_API_AUDIENCE and confirm the API app registration is exposed and consented in tenant b46d12bb-28f5-4d5e-992e-c9306e2385b4. ${e.message}`
+        )
+      }
 
       const updatedRows = csvData.rows.map((row) => ({ ...row }))
       const updatedHeaders = [...csvData.headers]
