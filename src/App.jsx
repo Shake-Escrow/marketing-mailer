@@ -101,7 +101,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !account) return
     let cancelled = false
-    getAccessToken(instance, account, marketingContactsRequest)
+    getAccessToken(instance, account, loginRequest)
       .then((token) => fetchAppConfig(token))
       .then((config) => {
         if (!cancelled && config.nvidiaApiKey) {
