@@ -254,6 +254,24 @@ export async function unsubscribeMarketingContact(email) {
 }
 
 /**
+ * Fetches runtime app config from the MessageHub backend.
+ * Requires a valid marketingContactsRequest token so the key is
+ * only delivered to authenticated users.
+ * @param {string} accessToken
+ * @returns {{ nvidiaApiKey: string|null }}
+ */
+export async function fetchAppConfig(accessToken) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/config`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
+}
+
+/**
  * Fetches the signed-in user's display info from Graph.
  */
 export async function getMe(accessToken) {

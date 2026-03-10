@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate } from './utils/template'
 import './App.css'
@@ -93,6 +93,26 @@ export default function App() {
   const [sending, setSending] = useState(false)
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
+  const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
+
+  // Fetch runtime config from MessageHub once the user is authenticated.
+  // The key travels over an authenticated channel and is never embedded in
+  // the frontend bundle.
+  useEffect(() => {
+    if (!isAuthenticated || !account) return
+    let cancelled = false
+    getAccessToken(instance, account, marketingContactsRequest)
+      .then((token) => fetchAppConfig(token))
+      .then((config) => {
+        if (!cancelled && config.nvidiaApiKey) {
+          setNvidiaApiKey(config.nvidiaApiKey)
+        }
+      })
+      .catch(() => {
+        // Non-fatal — AI features simply won't be available
+      })
+    return () => { cancelled = true }
+  }, [isAuthenticated, account])
 
   let parseDocxModulePromise
 
@@ -428,7 +448,7 @@ export default function App() {
 
             {error && <p className="error-text">{error}</p>}
 
-              {(sending || sendResults.length > 0) && (
+              {(sending || sendResults.length > 0 || nvidiaApiKey) && (
                 <div className="results">
                   <div className="results-header">
                     <h3>Send Log</h3>
@@ -442,6 +462,12 @@ export default function App() {
                     aria-live="polite"
                     aria-label="Email send console output"
                   >
+                    {nvidiaApiKey && (
+                      <div className="console-line console-line--muted">
+                        🤖 [SYS] NVIDIA_API_KEY loaded — AI features ready
+                      </div>
+                    )}
+
                     {sendResults.length === 0 && (
                       <div className="console-line console-line--muted">Waiting for send output…</div>
                     )}
