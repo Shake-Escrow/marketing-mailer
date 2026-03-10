@@ -1,6 +1,5 @@
-// src/utils/graphApi.js
-
 /**
+ * src/utils/graphApi.js
  * Acquires a fresh access token silently, falling back to popup.
  */
 export async function getAccessToken(msalInstance, account, loginRequest) {

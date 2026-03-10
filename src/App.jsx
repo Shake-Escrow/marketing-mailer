@@ -28,9 +28,10 @@ const formatLocalTimestamp = (date = new Date()) => {
 
 const getResultIcon = (status) => {
   if (status === 'sent') return '✅'
-  if (status === 'skipped-not-emailable') return '🚫'
+  if (status === 'checked-only') return '�'
+  if (status === 'skipped-not-emailable') return '⚠️'
   if (status === 'skipped-contacted' || status === 'skipped-duplicate') return '⏭️'
-  return '❌'
+  return 'ℹ️'
 }
 
 const formatEligibilityReason = (reason) => {
@@ -48,32 +49,32 @@ const formatEligibilityReason = (reason) => {
 const formatSendResultLine = (result) => {
   const statusLabel = {
     sent: 'SENT',
+    'checked-only': 'DRY',
     'skipped-contacted': 'SKIP',
     'skipped-duplicate': 'SKIP',
     'skipped-not-emailable': 'SKIP',
     failed: 'FAIL',
   }[result.status] || 'INFO'
 
-  let line = `${getResultIcon(result.status)} [${statusLabel}] ${result.email}`
+  let line = `${getResultIcon(result.status)} ${statusLabel} ${result.email}`
 
+  if (result.status === 'checked-only') {
+    line += ' eligibility checked only, email not sent'
+  }
   if (result.status === 'skipped-contacted') {
-    line += ' — already contacted in marketing contacts, email not sent'
+    line += ' already contacted in marketing contacts, email not sent'
   }
-
   if (result.status === 'skipped-duplicate') {
-    line += ' — duplicate CSV row, skipped'
+    line += ' duplicate CSV row, skipped'
   }
-
   if (result.status === 'skipped-not-emailable') {
-    line += ` — ${formatEligibilityReason(result.reason) || 'contact is not emailable'}`
+    line += ` ${formatEligibilityReason(result.reason)}; contact is not emailable`
   }
-
   if (result.rationale) {
-    line += ` — rationale: ${result.rationale}`
+    line += ` rationale=${result.rationale}`
   }
-
   if (result.error) {
-    line += ` — ${result.error}`
+    line += ` ${result.error}`
   }
 
   return line
@@ -122,7 +123,9 @@ export default function App() {
     return parseDocxModulePromise
   }
 
-  const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.email')
+  const username = (account?.username || '').toLowerCase()
+  const canSendEmails = username.endsWith('@shakedefi.email')
+  const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
 
   // Returns a copy of recipient with name fields filled in from defaultName when absent
   const withDefaultName = (recipient) => {
@@ -187,14 +190,17 @@ export default function App() {
 
   const handleSendAll = async () => {
     if (!account) return
-    if (!isShakeEmail) {
-      setError('Please sign in with your @shakedefi.email Microsoft account.')
+
+    if (!canRunApiFlow) {
+      setError('Please sign in with a @shakedefi.email or .onmicrosoft.com Microsoft account.')
       return
     }
+
     if (!docxData || !csvData?.recipients?.length) {
       setError('Upload both a .docx and a valid .csv file first.')
       return
     }
+
     if (!subject.trim()) {
       setError('Email subject is required.')
       return
@@ -206,29 +212,41 @@ export default function App() {
     setUpdatedCsvContent('')
 
     try {
-      const graphToken = await getAccessToken(instance, account, loginRequest)
-      const marketingContactsToken = await getAccessToken(instance, account, marketingContactsRequest)
-      const updatedRows = (csvData.rows || []).map((row) => ({ ...row }))
-      const updatedHeaders = [...(csvData.headers || [])]
+      const graphToken = canSendEmails
+        ? await getAccessToken(instance, account, loginRequest)
+        : null
+
+      const marketingContactsToken = await getAccessToken(
+        instance,
+        account,
+        marketingContactsRequest
+      )
+
+      const updatedRows = csvData.rows.map((row) => ({ ...row }))
+      const updatedHeaders = [...csvData.headers]
       const processedEmails = new Set()
       let previousSuccessfulEmail = null
-
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
-      if (!updatedHeaders.includes(lastContactedKey)) {
+
+      if (canSendEmails && !updatedHeaders.includes(lastContactedKey)) {
         updatedHeaders.push(lastContactedKey)
       }
 
       for (const recipient of csvData.recipients) {
-        const normalizedEmail = (recipient.email || '').trim().toLowerCase()
+        const normalizedEmail = recipient.email.trim().toLowerCase()
 
         if (processedEmails.has(normalizedEmail)) {
           previousSuccessfulEmail = null
           setSendResults((prev) => [
             ...prev,
-            { email: normalizedEmail || recipient.email, status: 'skipped-duplicate' },
+            {
+              email: normalizedEmail || recipient.email,
+              status: 'skipped-duplicate',
+            },
           ])
           continue
         }
+
         processedEmails.add(normalizedEmail)
 
         const personalizedHtml = applyTemplate(docxData.html, withDefaultName(recipient))
@@ -236,6 +254,7 @@ export default function App() {
 
         try {
           const contactPayload = buildMarketingContactPayload(recipient)
+
           const marketingContactResult = await createMarketingContact(
             marketingContactsToken,
             contactPayload,
@@ -249,7 +268,10 @@ export default function App() {
             previousSuccessfulEmail = null
             setSendResults((prev) => [
               ...prev,
-              { email: normalizedEmail, status: 'skipped-contacted' },
+              {
+                email: normalizedEmail,
+                status: 'skipped-contacted',
+              },
             ])
             continue
           }
@@ -276,6 +298,19 @@ export default function App() {
             continue
           }
 
+          if (!canSendEmails) {
+            previousSuccessfulEmail = null
+            setSendResults((prev) => [
+              ...prev,
+              {
+                email: recipient.email,
+                status: 'checked-only',
+                rationale: contactEligibility.rationale,
+              },
+            ])
+            continue
+          }
+
           await sendEmail(
             graphToken,
             normalizedEmail,
@@ -284,8 +319,8 @@ export default function App() {
             personalizedHtml
           )
 
-          const rowIndex = recipient.__rowIndex
-          if (rowIndex !== undefined && updatedRows[rowIndex]) {
+          const rowIndex = recipient.rowIndex
+          if (rowIndex !== undefined) {
             updatedRows[rowIndex][lastContactedKey] = formatLocalTimestamp()
           }
 
@@ -302,39 +337,41 @@ export default function App() {
           previousSuccessfulEmail = null
           setSendResults((prev) => [
             ...prev,
-            { email: recipient.email, status: 'failed', error: e.message },
+            {
+              email: recipient.email,
+              status: 'failed',
+              error: e.message,
+            },
           ])
         }
 
         await new Promise((resolve) => setTimeout(resolve, 350))
       }
 
-      if (previousSuccessfulEmail) {
-        await createMarketingContact(
-          marketingContactsToken,
-          null,
-          {
-            clientId: account.username,
-            previousSuccessfulEmail,
-            skipContactCreate: true,
-          }
-        )
+      if (canSendEmails && previousSuccessfulEmail) {
+        await createMarketingContact(marketingContactsToken, null, {
+          clientId: account.username,
+          previousSuccessfulEmail,
+          skipContactCreate: true,
+        })
       }
 
-      const csvOutput = serializeCsv(updatedHeaders, updatedRows)
-      setUpdatedCsvContent(csvOutput)
-      setCsvData((prev) =>
-        prev
-          ? {
-              ...prev,
-              rows: updatedRows,
-              headers: updatedHeaders,
-              lastContactedKey,
-            }
-          : prev
-      )
+      if (canSendEmails) {
+        const csvOutput = serializeCsv(updatedHeaders, updatedRows)
+        setUpdatedCsvContent(csvOutput)
+        setCsvData((prev) =>
+          prev
+            ? {
+                ...prev,
+                rows: updatedRows,
+                headers: updatedHeaders,
+                lastContactedKey,
+              }
+            : prev
+        )
+      }
     } catch (e) {
-      setError(`Unable to send emails: ${e.message}`)
+      setError(`Unable to process recipients: ${e.message}`)
     } finally {
       setSending(false)
     }
@@ -363,15 +400,25 @@ export default function App() {
         <section className="mailer-panel">
           {!isAuthenticated ? (
             <div>
-              <p className="signed-in-text">Sign in with your @shakedefi.email Microsoft account to begin.</p>
+              <p className="signed-in-text">
+                Sign in with your @shakedefi.email or .onmicrosoft.com Microsoft account to begin.
+              </p>
               <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
                 Microsoft Exchange Sign In
               </button>
             </div>
           ) : (
             <div className="workflow">
-              {!isShakeEmail && (
-                <p className="error-text">Please use a @shakedefi.email account to send campaigns.</p>
+              {!canRunApiFlow && (
+                <p className="error-text">
+                  Please use a @shakedefi.email or .onmicrosoft.com account.
+                </p>
+              )}
+
+              {canRunApiFlow && !canSendEmails && (
+                <p className="error-text">
+                  Dry run mode: marketing contact checks will run, but emails will not be sent and Last Contacted will not be updated.
+                </p>
               )}
 
               <div className="help-box">
@@ -464,9 +511,7 @@ export default function App() {
 
             <button
               className="send-btn"
-              disabled={
-                sending || !isShakeEmail || !docxData || !csvData?.recipients?.length || !subject.trim()
-              }
+              disabled={sending || !canRunApiFlow || !docxData || !csvData?.recipients?.length || !subject.trim()}
               onClick={handleSendAll}
             >
               {sending ? 'Sending…' : 'Send All Emails'}
@@ -490,7 +535,7 @@ export default function App() {
                   >
                     {nvidiaApiKey && (
                       <div className="console-line console-line--muted">
-                        🤖 [SYS] NVIDIA_API_KEY loaded — AI features ready
+                        🤖 [SYS] NVIDIA_API_KEY loaded — ***{nvidiaApiKey.slice(-3)}
                       </div>
                     )}
 
