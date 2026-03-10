@@ -88,6 +88,7 @@ export default function App() {
   const [docxData, setDocxData] = useState(null)
   const [csvData, setCsvData] = useState(null)
   const [subject, setSubject] = useState('')
+  const [defaultName, setDefaultName] = useState('')
   const [error, setError] = useState('')
   const [selectedRecipient, setSelectedRecipient] = useState(0)
   const [sending, setSending] = useState(false)
@@ -123,6 +124,22 @@ export default function App() {
 
   const isShakeEmail = (account?.username || '').toLowerCase().endsWith('@shakedefi.email')
 
+  // Returns a copy of recipient with name fields filled in from defaultName when absent
+  const withDefaultName = (recipient) => {
+    if (!defaultName.trim()) return recipient
+    const fallback = defaultName.trim()
+    const hasName = (recipient.name || '').trim()
+    if (hasName) return recipient
+    return {
+      ...recipient,
+      name: fallback,
+      full_name: fallback,
+      fullname: fallback,
+      first_name: recipient.first_name || fallback,
+      firstname: recipient.firstname || fallback,
+    }
+  }
+
   const handleDocxUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -155,13 +172,13 @@ export default function App() {
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
-    return applyTemplate(docxData.html, previewRecipient || {})
-  }, [docxData, previewRecipient])
+    return applyTemplate(docxData.html, withDefaultName(previewRecipient || {}))
+  }, [docxData, previewRecipient, defaultName])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
-    return applyTemplate(subject, previewRecipient || {})
-  }, [subject, previewRecipient])
+    return applyTemplate(subject, withDefaultName(previewRecipient || {}))
+  }, [subject, previewRecipient, defaultName])
 
   useEffect(() => {
     if (!sendLogRef.current) return
@@ -214,8 +231,8 @@ export default function App() {
         }
         processedEmails.add(normalizedEmail)
 
-        const personalizedHtml = applyTemplate(docxData.html, recipient)
-        const personalizedSubject = applyTemplate(subject, recipient)
+        const personalizedHtml = applyTemplate(docxData.html, withDefaultName(recipient))
+        const personalizedSubject = applyTemplate(subject, withDefaultName(recipient))
 
         try {
           const contactPayload = buildMarketingContactPayload(recipient)
@@ -398,6 +415,15 @@ export default function App() {
                 <span>{csvData.skippedDuplicateEmail ? `⏭️ ${csvData.skippedDuplicateEmail} duplicate emails skipped` : '✅ No duplicate emails'}</span>
               </div>
             )}
+
+            <label className="subject-field">
+              Default greeting name <span style={{ fontWeight: 400, fontSize: '0.85em', color: '#8b949e' }}>(used when a recipient has no name)</span>
+              <input
+                value={defaultName}
+                onChange={(e) => setDefaultName(e.target.value)}
+                placeholder="Auto Dealer"
+              />
+            </label>
 
             <label className="subject-field">
               Subject
