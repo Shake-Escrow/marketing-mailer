@@ -127,3 +127,29 @@
 .console-line--muted::before {
   color: #58a6ff;
 }
+
+.recipient-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #161b22;
+}
+
+.recipient-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.recipient-scroll::-webkit-scrollbar-track {
+  background: #161b22;
+  border-radius: 999px;
+}
+
+.recipient-scroll::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 999px;
+}

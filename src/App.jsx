@@ -89,7 +89,7 @@ export default function App() {
   const [docxData, setDocxData] = useState(null)
   const [csvData, setCsvData] = useState(null)
   const [subject, setSubject] = useState('')
-  const [defaultName, setDefaultName] = useState('')
+  const [defaultName, setDefaultName] = useState('Auto Dealer')
   const [error, setError] = useState('')
   const [selectedRecipient, setSelectedRecipient] = useState(0)
   const [sending, setSending] = useState(false)
@@ -477,16 +477,18 @@ export default function App() {
             {csvData?.recipients?.length > 0 && (
               <div className="preview-wrap">
                 <div className="recipient-list">
-                  <h3>Recipients</h3>
-                  {csvData.recipients.map((recipient, index) => (
-                    <button
-                      key={`${recipient.email}-${index}`}
-                      className={index === selectedRecipient ? 'recipient-btn active' : 'recipient-btn'}
-                      onClick={() => setSelectedRecipient(index)}
-                    >
-                      {recipient.email}
-                    </button>
-                  ))}
+                  <h3>Recipients ({csvData.recipients.length})</h3>
+                  <div className="recipient-scroll">
+                    {csvData.recipients.map((recipient, index) => (
+                      <button
+                        key={`${recipient.email}-${index}`}
+                        className={index === selectedRecipient ? 'recipient-btn active' : 'recipient-btn'}
+                        onClick={() => setSelectedRecipient(index)}
+                      >
+                        {recipient.email}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="preview-panel">
