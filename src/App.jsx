@@ -543,7 +543,7 @@ export default function App() {
                     )}
 
                     {parsedDocxHtml ? (
-                      <div dangerouslySetInnerHTML={{ __html: parsedDocxHtml }} />
+                      <pre className="console-html-source">{parsedDocxHtml}</pre>
                     ) : (
                       <div className="console-line console-line--muted">
                         No parsed DOCX HTML yet.

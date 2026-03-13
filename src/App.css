@@ -128,6 +128,13 @@
   color: #58a6ff;
 }
 
+.console-html-source {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .recipient-scroll {
   display: flex;
   flex-wrap: wrap;
