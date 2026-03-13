@@ -96,6 +96,7 @@ export default function App() {
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
+  const [parsedDocxHtml, setParsedDocxHtml] = useState('')
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -146,14 +147,17 @@ export default function App() {
   const handleDocxUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
-    setError('')
 
+    setError('')
     try {
       const { parseDocxFile } = await loadParseDocxModule()
       const parsed = await parseDocxFile(file)
+
       setDocxData(parsed)
-      setSubject(parsed.subject || '')
+      setSubject(parsed.subject)
+      setParsedDocxHtml(parsed.html || '')
     } catch (e) {
+      setParsedDocxHtml('')
       setError(`DOCX parse error: ${e.message}`)
     }
   }
@@ -536,6 +540,14 @@ export default function App() {
 
                     {sendResults.length === 0 && (
                       <div className="console-line console-line--muted">Waiting for send output…</div>
+                    )}
+
+                    {parsedDocxHtml ? (
+                      <div dangerouslySetInnerHTML={{ __html: parsedDocxHtml }} />
+                    ) : (
+                      <div className="console-line console-line--muted">
+                        No parsed DOCX HTML yet.
+                      </div>
                     )}
 
                     {sendResults.map((result, index) => (
