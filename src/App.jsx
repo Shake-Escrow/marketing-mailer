@@ -5,7 +5,7 @@ import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
-import { applyTemplate } from './utils/template'
+import { applyTemplate, stripUnresolvedTokens } from './utils/template'
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -359,8 +359,8 @@ export default function App() {
             ...(contactEligibility.template_variables || {}),
             ...withDefaultName(recipient),
           }
-          const personalizedHtml = applyTemplate(docxData.html, templateVariables)
-          const personalizedSubject = applyTemplate(subject, templateVariables)
+          const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables))
+          const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
           await sendEmail(
             graphToken,

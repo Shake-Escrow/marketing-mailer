@@ -99,6 +99,28 @@ export async function parseDocxFile(file) {
 }
 
 /**
+ * ─── Subject line behaviour — two paths ──────────────────────────────────────
+ *
+ * PATH 1 — Subject extracted from the docx:
+ *   parseDocxFile() pulls the raw subject text (e.g. "Secure Car Transactions")
+ *   and passes it through templateizeContent() before it reaches App.jsx.
+ *   templateizeContent() rewrites known phrases into {{placeholder}} tokens
+ *   (e.g. → "Secure {{Vehicle}} Transactions"), so the subject that lands in the
+ *   App.jsx text box already contains tokens ready for resolution at send time.
+ *
+ * PATH 2 — User types their own subject in the App.jsx text box:
+ *   templateizeContent() only runs once, at docx parse time. It never re-runs
+ *   on text box edits. So a manually typed subject (e.g. "Secure Car Transactions")
+ *   is taken literally — "Car" will go out to every recipient unchanged.
+ *   However, if the user explicitly writes a token (e.g. "Secure {{Vehicle}}
+ *   Transactions"), applyTemplate() will resolve it correctly at send time.
+ *
+ * In short: templateizeContent() is a convenience that spares the user from
+ * knowing about {{tokens}} when working from a well-formed docx. The text box
+ * is a manual escape hatch whose content is treated as a literal string unless
+ * the user deliberately includes {{token}} syntax themselves.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
  * Replaces known variable regions in the email body HTML and subject line with
  * {{placeholder}} tokens for use with applyTemplate().
  *
