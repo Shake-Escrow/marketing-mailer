@@ -1,4 +1,4 @@
-// src/utils/parseCsv.js
+// parseCsv.js
 import Papa from 'papaparse'
 
 function makeKeyAliases(key) {

@@ -1,5 +1,5 @@
 /**
- * src/utils/graphApi.js
+ * graphApi.js
  * Acquires a fresh access token silently, falling back to popup.
  */
 export async function getAccessToken(msalInstance, account, loginRequest) {
@@ -272,6 +272,7 @@ export async function checkMarketingContact(accessToken, email, options = {}) {
     rationale: responseBody.rationale || responseBody.assessment?.rationale || null,
     contact: responseBody.contact || null,
     assessment: responseBody.assessment || null,
+    template: responseBody.template || null,
   }
 }
 

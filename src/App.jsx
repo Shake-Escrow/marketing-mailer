@@ -85,6 +85,7 @@ export default function App() {
   const isAuthenticated = useIsAuthenticated()
   const account = accounts[0]
   const sendLogRef = useRef(null)
+  const eligibilityCache = useRef(new Map())
 
   const [docxData, setDocxData] = useState(null)
   const [csvData, setCsvData] = useState(null)
@@ -97,6 +98,7 @@ export default function App() {
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
+  const [previewEligibility, setPreviewEligibility] = useState(null)
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -169,6 +171,8 @@ export default function App() {
 
     try {
       const parsed = await parseCsvFile(file)
+      eligibilityCache.current.clear()
+      setPreviewEligibility(null)
       setCsvData(parsed)
       setSelectedRecipient(0)
     } catch (e) {
@@ -179,18 +183,62 @@ export default function App() {
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
-    return applyTemplate(docxData.html, withDefaultName(previewRecipient || {}))
-  }, [docxData, previewRecipient, defaultName])
+    const variables = {
+      ...(previewEligibility?.template_variables || {}),
+      ...withDefaultName(previewRecipient || {}),
+    }
+    return applyTemplate(docxData.html, variables)
+  }, [docxData, previewRecipient, previewEligibility, defaultName])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
-    return applyTemplate(subject, withDefaultName(previewRecipient || {}))
-  }, [subject, previewRecipient, defaultName])
+    const variables = {
+      ...(previewEligibility?.template_variables || {}),
+      ...withDefaultName(previewRecipient || {}),
+    }
+    return applyTemplate(subject, variables)
+  }, [subject, previewRecipient, previewEligibility, defaultName])
 
   useEffect(() => {
     if (!sendLogRef.current) return
     sendLogRef.current.scrollTop = sendLogRef.current.scrollHeight
   }, [sendResults, sending])
+
+  // Live eligibility + template_variables fetch for the preview panel.
+  // Uses eligibilityCache so each email is only checked once regardless of
+  // how many times the user selects it or whether it also appears in the send loop.
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canRunApiFlow) return
+    const recipient = csvData?.recipients?.[selectedRecipient]
+    if (!recipient?.email) {
+      setPreviewEligibility(null)
+      return
+    }
+
+    const normalizedEmail = recipient.email.trim().toLowerCase()
+
+    if (eligibilityCache.current.has(normalizedEmail)) {
+      setPreviewEligibility(eligibilityCache.current.get(normalizedEmail))
+      return
+    }
+
+    let cancelled = false
+
+    getAccessToken(instance, account, loginRequest)
+      .then((token) =>
+        checkMarketingContact(token, normalizedEmail, { clientId: account.username })
+      )
+      .then((result) => {
+        if (cancelled) return
+        eligibilityCache.current.set(normalizedEmail, result)
+        setPreviewEligibility(result)
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewEligibility(null)
+      })
+
+    return () => { cancelled = true }
+  }, [selectedRecipient, csvData, isAuthenticated, account, canRunApiFlow])
 
   const handleSendAll = async () => {
     if (!account) return
@@ -246,9 +294,6 @@ export default function App() {
 
         processedEmails.add(normalizedEmail)
 
-        const personalizedHtml = applyTemplate(docxData.html, withDefaultName(recipient))
-        const personalizedSubject = applyTemplate(subject, withDefaultName(recipient))
-
         try {
           const contactPayload = buildMarketingContactPayload(recipient)
 
@@ -273,13 +318,15 @@ export default function App() {
             continue
           }
 
-          const contactEligibility = await checkMarketingContact(
+          const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
+          const contactEligibility = cachedEligibility ?? await checkMarketingContact(
             marketingContactsToken,
             normalizedEmail,
-            {
-              clientId: account.username,
-            }
+            { clientId: account.username }
           )
+          if (!cachedEligibility) {
+            eligibilityCache.current.set(normalizedEmail, contactEligibility)
+          }
 
           if (!contactEligibility.emailable) {
             previousSuccessfulEmail = null
@@ -307,6 +354,13 @@ export default function App() {
             ])
             continue
           }
+
+          const templateVariables = {
+            ...(contactEligibility.template_variables || {}),
+            ...withDefaultName(recipient),
+          }
+          const personalizedHtml = applyTemplate(docxData.html, templateVariables)
+          const personalizedSubject = applyTemplate(subject, templateVariables)
 
           await sendEmail(
             graphToken,

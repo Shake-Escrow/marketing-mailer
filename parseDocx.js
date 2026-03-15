@@ -1,4 +1,4 @@
-// src/utils/parseDocx.js
+// parseDocx.js
 import mammoth from 'mammoth'
 
 export { applyTemplate } from './src/utils/template.js'
@@ -17,6 +17,9 @@ export { applyTemplate } from './src/utils/template.js'
  *
  * Additionally, any "Dear Foo Bar," / "Dear Foo Bar:" text in the body is
  * normalised to "Dear {{name}}," so the greeting is personalised per recipient.
+ *
+ * Finally, templateizeContent() converts known variable regions into {{placeholder}}
+ * tokens so that applyTemplate() can substitute per-recipient values at send time.
  */
 export async function parseDocxFile(file) {
   const arrayBuffer = await file.arrayBuffer()
@@ -82,12 +85,110 @@ export async function parseDocxFile(file) {
   // Plain text (strip all tags)
   const textContent = tempDiv.textContent.replace(/\s+/g, ' ').trim()
 
+  // Convert known variable regions to {{placeholder}} tokens so applyTemplate()
+  // can substitute per-recipient values at send time.
+  const { html: templatedHtml, subject: templatedSubject } = templateizeContent(bodyHtml, subject)
+  const { html: templatedText } = templateizeContent(textContent, '')
+
   return {
-    html: bodyHtml,
-    text: textContent,
-    subject,
+    html: templatedHtml,
+    text: templatedText,
+    subject: templatedSubject,
     warnings: messages.filter((m) => m.type === 'warning').map((m) => m.message),
   }
+}
+
+/**
+ * Replaces known variable regions in the email body HTML and subject line with
+ * {{placeholder}} tokens for use with applyTemplate().
+ *
+ * Each rule targets a specific mutable word or phrase by anchoring on the
+ * surrounding literal text. Rules are applied to both the HTML body string
+ * and the subject string as appropriate.
+ *
+ * Template variables introduced:
+ *   Subject  — {{Vehicle}}
+ *   Body     — {{vehicle}}          (×2)
+ *              {{dealerships}}      (×2)
+ *              {{your dealership}}  (×2)
+ *              {{Auto Dealers}}     (×1)
+ *              {{sell luxury vehicles, specialty cars, fleet inventory, or private sales}}  (×1)
+ *   Greeting — {{name}}             (handled separately by normalizeDearGreeting)
+ */
+function templateizeContent(html, subject) {
+  let body = html
+  let subj = subject
+
+  // ── Subject ────────────────────────────────────────────────────────────────
+
+  // "Secure {Vehicle} Transactions"
+  // Anchor: "Secure " … " Transactions"
+  subj = subj.replace(
+    /(Secure\s+)\S+(\s+Transactions)/i,
+    '$1{{Vehicle}}$2'
+  )
+
+  // ── Body ───────────────────────────────────────────────────────────────────
+
+  // "High-value {vehicle} transactions demand"
+  // Anchor: "High-value " … " transactions demand"
+  body = body.replace(
+    /(High-value\s+)\S+(\s+transactions\s+demand)/i,
+    '$1{{vehicle}}$2'
+  )
+
+  // "modernize {vehicle} transactions"
+  // Anchor: "modernize " … " transactions"
+  body = body.replace(
+    /(\bmodernize\s+)\S+(\s+transactions)/i,
+    '$1{{vehicle}}$2'
+  )
+
+  // "risky for {dealerships}."
+  // Anchor: "risky for " … (word boundary — period/punctuation left untouched by \w+)
+  body = body.replace(
+    /(\brisky\s+for\s+)\w+/i,
+    '$1{{dealerships}}'
+  )
+
+  // "accelerates, {dealerships} that"
+  // Anchor: "accelerates, " … " that"
+  body = body.replace(
+    /(\baccelerates,\s+)\w+(\s+that)/i,
+    '$1{{dealerships}}$2'
+  )
+
+  // "allowing {your dealership} to accept"
+  // Anchor: "allowing " … " to accept"
+  // [\w\s]+? — lazy multi-word match; stops at the first " to accept"
+  body = body.replace(
+    /(\ballowing\s+)[\w\s]+?(\s+to\s+accept)/i,
+    '$1{{your dealership}}$2'
+  )
+
+  // "into {your dealership} operations"
+  // Anchor: "into " … " operations"
+  body = body.replace(
+    /(\binto\s+)[\w\s]+?(\s+operations)/i,
+    '$1{{your dealership}}$2'
+  )
+
+  // "Why {Auto Dealers} Choose"
+  // Anchor: "Why " … " Choose"
+  body = body.replace(
+    /(\bWhy\s+)[\w\s]+?(\s+Choose)/i,
+    '$1{{Auto Dealers}}$2'
+  )
+
+  // "you {sell luxury vehicles, specialty cars, fleet inventory, or private sales}, Shake"
+  // Anchor: "you " … ", Shake"
+  // [^<]+? — lazy match; [^<] prevents crossing HTML tag boundaries
+  body = body.replace(
+    /(\byou\s+)[^<]+?(,\s*Shake)/i,
+    '$1{{sell luxury vehicles, specialty cars, fleet inventory, or private sales}}$2'
+  )
+
+  return { html: body, subject: subj }
 }
 
 /**
