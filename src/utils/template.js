@@ -1,6 +1,6 @@
 // src/utils/template.js
 export function applyTemplate(template, variables = {}) {
-  return template.replace(/\{\{(\s*[\w.-]+\s*)\}\}/g, (match, key) => {
+  return template.replace(/\{\{(\s*[\w.,\- ]+\s*)\}\}/g, (match, key) => {
     const normalizedKey = key.trim().toLowerCase()
     if (variables[normalizedKey] === undefined) return match
     const value = variables[normalizedKey]
