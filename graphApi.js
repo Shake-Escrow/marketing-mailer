@@ -326,3 +326,33 @@ export async function getMe(accessToken) {
   if (!res.ok) throw new Error('Failed to fetch user info');
   return res.json();
 }
+
+/**
+ * Fetches contacts that have never been contacted (last_contacted IS NULL)
+ * and whose domain is assessed as appropriate, complete with merged template_variables.
+ * @param {string} accessToken
+ * @param {{ limit?: number, offset?: number, clientId?: string }} [options]
+ * @returns {{ contacts: object[], total: number }}
+ */
+export async function fetchEmailableContacts(accessToken, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const params = new URLSearchParams()
+  if (options.limit)  params.set('limit',  String(options.limit))
+  if (options.offset) params.set('offset', String(options.offset))
+  const qs = params.toString() ? `?${params}` : ''
+
+  const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/emailable${qs}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+  })
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+
+  return {
+    contacts: body.contacts || [],
+    total:    body.total    || 0,
+  }
+}

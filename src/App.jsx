@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
 import './App.css'
@@ -99,6 +99,7 @@ export default function App() {
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
+  const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -180,6 +181,51 @@ export default function App() {
     }
   }
 
+  const handleLoadFromDb = async () => {
+    if (!account) return
+    setDbRecipientsLoading(true)
+    setError('')
+    try {
+      const token = await getAccessToken(instance, account, loginRequest)
+      const { contacts, total } = await fetchEmailableContacts(token, { clientId: account.username })
+      if (!contacts.length) {
+        setError('No uncontacted emailable recipients found in the database.')
+        return
+      }
+      const recipients = contacts.map((c, index) => ({
+        email:          (c.email || '').trim().toLowerCase(),
+        name:           c.first_name || '',
+        first_name:     c.first_name || '',
+        full_name:      c.full_name  || '',
+        company:        c.company    || '',
+        industry:       c.industry   || '',
+        custom_field_1: c.custom_field_1 || '',
+        custom_field_2: c.custom_field_2 || '',
+        custom_field_3: c.custom_field_3 || '',
+        custom_field_4: c.custom_field_4 || '',
+        rowIndex:       index,
+      }))
+      eligibilityCache.current.clear()
+      setPreviewEligibility(null)
+      setCsvData({
+        recipients,
+        rows:    [],
+        headers: [],
+        skipped: 0,
+        skippedInvalidEmail: 0,
+        skippedPreviouslyContacted: 0,
+        skippedDuplicateEmail: 0,
+        fromDatabase: true,
+        dbTotal: total,
+      })
+      setSelectedRecipient(0)
+    } catch (e) {
+      setError(`Failed to load recipients from database: ${e.message}`)
+    } finally {
+      setDbRecipientsLoading(false)
+    }
+  }
+
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
@@ -249,7 +295,7 @@ export default function App() {
     }
 
     if (!docxData || !csvData?.recipients?.length) {
-      setError('Upload both a .docx and a valid .csv file first.')
+      setError('Upload a .docx and either upload a .csv or load recipients from the database.')
       return
     }
 
@@ -493,6 +539,17 @@ export default function App() {
                 <span>Upload .csv recipients</span>
                 <input type="file" accept=".csv" onChange={handleCsvUpload} />
               </label>
+
+              {!csvData && canRunApiFlow && (
+                <button
+                  className="upload-card"
+                  disabled={dbRecipientsLoading}
+                  onClick={handleLoadFromDb}
+                  style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
+                >
+                  <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
+                </button>
+              )}
             </div>
 
             {(docxData || csvData) && (
@@ -500,13 +557,15 @@ export default function App() {
                 <span>{docxData ? '✅ DOCX loaded' : '⬜ DOCX not loaded'}</span>
                 <span>
                   {csvData
-                    ? `✅ ${csvData.recipients.length} valid recipients${csvData.skipped ? ` (${csvData.skipped} skipped)` : ''}`
-                    : '⬜ CSV not loaded'}
+                    ? csvData.fromDatabase
+                      ? `✅ ${csvData.recipients.length} recipients loaded from database${csvData.dbTotal > csvData.recipients.length ? ` (${csvData.dbTotal} total, showing first ${csvData.recipients.length})` : ''}`
+                      : `✅ ${csvData.recipients.length} valid recipients${csvData.skipped ? ` (${csvData.skipped} skipped)` : ''}`
+                    : '⬜ No recipients loaded'}
                 </span>
               </div>
             )}
 
-            {csvData && (
+            {csvData && !csvData.fromDatabase && (
               <div className="status-row">
                 <span>{csvData.skippedInvalidEmail ? `⚠️ ${csvData.skippedInvalidEmail} invalid emails skipped` : '✅ No invalid emails'}</span>
                 <span>{csvData.skippedPreviouslyContacted ? `⏭️ ${csvData.skippedPreviouslyContacted} previously contacted skipped` : '✅ No previously contacted rows'}</span>
@@ -615,7 +674,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {updatedCsvContent && (
+                  {updatedCsvContent && !csvData?.fromDatabase && (
                     <button className="send-btn" onClick={handleDownloadUpdatedCsv}>
                       Download Updated CSV
                     </button>
