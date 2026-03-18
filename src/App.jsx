@@ -315,11 +315,12 @@ export default function App() {
 
       const updatedRows = csvData.rows.map((row) => ({ ...row }))
       const updatedHeaders = [...csvData.headers]
+      const shouldUpdateCsvRows = canSendEmails && !csvData.fromDatabase
       const processedEmails = new Set()
       let previousSuccessfulEmail = null
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
 
-      if (canSendEmails && !updatedHeaders.includes(lastContactedKey)) {
+      if (shouldUpdateCsvRows && !updatedHeaders.includes(lastContactedKey)) {
         updatedHeaders.push(lastContactedKey)
       }
 
@@ -417,7 +418,7 @@ export default function App() {
           )
 
           const rowIndex = recipient.rowIndex
-          if (rowIndex !== undefined) {
+          if (shouldUpdateCsvRows && rowIndex !== undefined && updatedRows[rowIndex]) {
             updatedRows[rowIndex][lastContactedKey] = formatLocalTimestamp()
           }
 
@@ -453,7 +454,7 @@ export default function App() {
         })
       }
 
-      if (canSendEmails) {
+      if (shouldUpdateCsvRows) {
         const csvOutput = serializeCsv(updatedHeaders, updatedRows)
         setUpdatedCsvContent(csvOutput)
         setCsvData((prev) =>
