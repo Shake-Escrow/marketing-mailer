@@ -80,6 +80,36 @@ const formatSendResultLine = (result) => {
   return line
 }
 
+const stripLeadingArticle = (value) => {
+  const text = String(value || '').trim()
+  return text.replace(/^the\s+/i, '')
+}
+
+const normalizeRecipientGreetingName = (recipient) => {
+  if (!recipient) return recipient
+
+  const normalizedName = stripLeadingArticle(recipient.name)
+  const normalizedFullName = stripLeadingArticle(recipient.full_name || recipient.fullname)
+  const normalizedFirstName = stripLeadingArticle(recipient.first_name || recipient.firstname)
+
+  return {
+    ...recipient,
+    ...(normalizedName ? { name: normalizedName } : {}),
+    ...(normalizedFullName
+      ? {
+          full_name: normalizedFullName,
+          fullname: normalizedFullName,
+        }
+      : {}),
+    ...(normalizedFirstName
+      ? {
+          first_name: normalizedFirstName,
+          firstname: normalizedFirstName,
+        }
+      : {}),
+  }
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -133,17 +163,19 @@ export default function App() {
 
   // Returns a copy of recipient with name fields filled in from defaultName when absent
   const withDefaultName = (recipient) => {
-    if (!defaultName.trim()) return recipient
+    const normalizedRecipient = normalizeRecipientGreetingName(recipient)
+    if (!defaultName.trim()) return normalizedRecipient
     const fallback = defaultName.trim()
-    const hasName = (recipient.name || '').trim()
-    if (hasName) return recipient
+    const hasName = (normalizedRecipient.name || '').trim()
+    if (hasName) return normalizedRecipient
+    const normalizedFallback = stripLeadingArticle(fallback) || fallback
     return {
-      ...recipient,
-      name: fallback,
-      full_name: fallback,
-      fullname: fallback,
-      first_name: recipient.first_name || fallback,
-      firstname: recipient.firstname || fallback,
+      ...normalizedRecipient,
+      name: normalizedFallback,
+      full_name: normalizedFallback,
+      fullname: normalizedFallback,
+      first_name: normalizedRecipient.first_name || normalizedFallback,
+      firstname: normalizedRecipient.firstname || normalizedFallback,
     }
   }
 
@@ -412,7 +444,7 @@ export default function App() {
           await sendEmail(
             graphToken,
             normalizedEmail,
-            recipient.name || recipient.company || recipient.email,
+            withDefaultName(recipient).name || recipient.company || recipient.email,
             personalizedSubject,
             personalizedHtml
           )

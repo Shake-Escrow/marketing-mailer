@@ -166,8 +166,8 @@ export function parseCsvFile(file) {
               templateData.last_name = nameParts.last
               templateData.lastname = nameParts.last
             }
-            if (parsedName) templateData.name = parsedName
             if (parsedName) {
+              templateData.name = parsedName
               templateData.full_name = parsedName
               templateData.fullname = parsedName
             }
