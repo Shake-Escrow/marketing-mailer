@@ -79,7 +79,9 @@ function getMarketingContactsBaseUrl() {
 
   if (
     currentHostname === 'shakedefi.email' ||
-    currentHostname === 'www.shakedefi.email'
+    currentHostname === 'www.shakedefi.email' ||
+    currentHostname === 'shakedefi.com' ||
+    currentHostname === 'www.shakedefi.com'
   ) {
     return 'https://shake-hub-eeg4gtecepcfepcm.canadacentral-01.azurewebsites.net'
   }
