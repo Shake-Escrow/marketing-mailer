@@ -222,7 +222,7 @@ export default function App() {
     setDbRecipientsLoading(true)
     setError('')
     try {
-      const token = await getAccessToken(instance, account, loginRequest)
+      const token = await getAccessToken(instance, account, marketingContactsRequest)
       const { contacts, total } = await fetchEmailableContacts(token, { clientId: account.username })
       if (!contacts.length) {
         setError('No uncontacted emailable recipients found in the database.')
@@ -306,7 +306,7 @@ export default function App() {
 
     let cancelled = false
 
-    getAccessToken(instance, account, loginRequest)
+    getAccessToken(instance, account, marketingContactsRequest)
       .then((token) =>
         checkMarketingContact(token, normalizedEmail, { clientId: account.username })
       )
@@ -347,7 +347,7 @@ export default function App() {
 
     try {
       const graphToken = await getAccessToken(instance, account, loginRequest)
-      const marketingContactsToken = graphToken
+      const marketingContactsToken = await getAccessToken(instance, account, marketingContactsRequest)
 
       const updatedRows = csvData.rows.map((row) => ({ ...row }))
       const updatedHeaders = [...csvData.headers]
