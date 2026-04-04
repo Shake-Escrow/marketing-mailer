@@ -68,7 +68,10 @@ const formatSendResultLine = (result) => {
     line += ' duplicate CSV row, skipped'
   }
   if (result.status === 'skipped-not-emailable') {
-    line += ` ${formatEligibilityReason(result.reason)}; contact is not emailable`
+    const eligibilityReason = formatEligibilityReason(result.reason)
+    line += eligibilityReason
+      ? ` ${eligibilityReason}; contact is not emailable`
+      : ' contact is not emailable'
   }
   if (result.rationale) {
     line += ` rationale=${result.rationale}`
@@ -592,7 +595,7 @@ export default function App() {
                 <span>
                   {csvData
                     ? csvData.fromDatabase
-                      ? `✅ ${csvData.recipients.length} recipients loaded from database${csvData.dbTotal > csvData.recipients.length ? ` (${csvData.dbTotal} total, showing first ${csvData.recipients.length})` : ''}`
+                      ? `✅ ${csvData.recipients.length} recipients loaded from database`
                       : `✅ ${csvData.recipients.length} valid recipients${csvData.skipped ? ` (${csvData.skipped} skipped)` : ''}`
                     : '⬜ No recipients loaded'}
                 </span>
