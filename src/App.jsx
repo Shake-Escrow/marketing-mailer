@@ -128,7 +128,8 @@ export default function App() {
   }
 
   const username = (account?.username || '').toLowerCase()
-  const canSendEmails = username.endsWith('@shakedefi.email')
+  const canSendEmails =
+    username.endsWith('@shakedefi.email') || username.endsWith('@shakedefi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
 
   // Returns a copy of recipient with name fields filled in from defaultName when absent
@@ -290,7 +291,7 @@ export default function App() {
     if (!account) return
 
     if (!canRunApiFlow) {
-      setError('Please sign in with a @shakedefi.email or .onmicrosoft.com Microsoft account.')
+      setError('Please sign in with a @shakedefi or .onmicrosoft.com Microsoft account.')
       return
     }
 
@@ -499,7 +500,7 @@ export default function App() {
           {!isAuthenticated ? (
             <div>
               <p className="signed-in-text">
-                Sign in with your @shakedefi.email or .onmicrosoft.com Microsoft account to begin.
+                Sign in with your @shakedefi or .onmicrosoft.com Microsoft account to begin.
               </p>
               <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
                 Microsoft Exchange Sign In
@@ -509,7 +510,7 @@ export default function App() {
             <div className="workflow">
               {!canRunApiFlow && (
                 <p className="error-text">
-                  Please use a @shakedefi.email or .onmicrosoft.com account.
+                  Please use a @shakedefi or .onmicrosoft.com account.
                 </p>
               )}
 
