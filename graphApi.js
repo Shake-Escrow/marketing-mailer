@@ -341,6 +341,7 @@ export async function fetchEmailableContacts(accessToken, options = {}) {
   const params = new URLSearchParams()
   if (options.limit)  params.set('limit',  String(options.limit))
   if (options.offset) params.set('offset', String(options.offset))
+  if (options.selectionMode) params.set('selectionMode', String(options.selectionMode))
   const qs = params.toString() ? `?${params}` : ''
 
   const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/emailable${qs}`, {

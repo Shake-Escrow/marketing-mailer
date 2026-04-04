@@ -119,6 +119,7 @@ export default function App() {
   const account = accounts[0]
   const sendLogRef = useRef(null)
   const eligibilityCache = useRef(new Map())
+  const MAX_DB_RECIPIENT_LOAD = 500
 
   const [docxData, setDocxData] = useState(null)
   const [csvData, setCsvData] = useState(null)
@@ -133,6 +134,7 @@ export default function App() {
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
+  const [dbLoadLimit, setDbLoadLimit] = useState(String(MAX_DB_RECIPIENT_LOAD))
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -161,9 +163,25 @@ export default function App() {
   }
 
   const username = (account?.username || '').toLowerCase()
+  const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
   const canSendEmails =
     username.endsWith('@shakedefi.email') || username.endsWith('@shakedefi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
+
+  const normalizeDbLoadLimit = (value) => {
+    const digitsOnly = String(value || '').replace(/\D/g, '')
+    if (!digitsOnly) return ''
+
+    const parsed = parseInt(digitsOnly, 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) return '1'
+    if (parsed > MAX_DB_RECIPIENT_LOAD) return String(MAX_DB_RECIPIENT_LOAD)
+    return String(parsed)
+  }
+
+  const commitDbLoadLimit = (value) => {
+    const normalized = normalizeDbLoadLimit(value)
+    setDbLoadLimit(normalized || String(MAX_DB_RECIPIENT_LOAD))
+  }
 
   // Returns a copy of recipient with name fields filled in from defaultName when absent
   const withDefaultName = (recipient) => {
@@ -219,11 +237,21 @@ export default function App() {
 
   const handleLoadFromDb = async () => {
     if (!account) return
+    const requestedLimit = Math.min(
+      Math.max(parseInt(normalizeDbLoadLimit(dbLoadLimit) || String(MAX_DB_RECIPIENT_LOAD), 10), 1),
+      MAX_DB_RECIPIENT_LOAD
+    )
+
+    setDbLoadLimit(String(requestedLimit))
     setDbRecipientsLoading(true)
     setError('')
     try {
       const token = await getAccessToken(instance, account, loginRequest)
-      const { contacts, total } = await fetchEmailableContacts(token, { clientId: account.username })
+      const { contacts, total } = await fetchEmailableContacts(token, {
+        limit: requestedLimit,
+        clientId: account.username,
+        ...(isShakeDefiDotComUser ? { selectionMode: 'shakedefi_com_mix' } : {}),
+      })
       if (!contacts.length) {
         setError('No uncontacted emailable recipients found in the database.')
         return
@@ -578,14 +606,29 @@ export default function App() {
               </label>
 
               {!csvData && canRunApiFlow && (
-                <button
-                  className="upload-card"
-                  disabled={dbRecipientsLoading}
-                  onClick={handleLoadFromDb}
-                  style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
-                >
-                  <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
-                </button>
+                <div className="db-load-card">
+                  <label className="db-load-limit-field">
+                    <span>Recipients to load from database (max {MAX_DB_RECIPIENT_LOAD})</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={dbLoadLimit}
+                      disabled={dbRecipientsLoading}
+                      onChange={(e) => setDbLoadLimit(normalizeDbLoadLimit(e.target.value))}
+                      onBlur={(e) => commitDbLoadLimit(e.target.value)}
+                      placeholder={String(MAX_DB_RECIPIENT_LOAD)}
+                    />
+                  </label>
+
+                  <button
+                    className="upload-card"
+                    disabled={dbRecipientsLoading}
+                    onClick={handleLoadFromDb}
+                    style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
+                  >
+                    <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
+                  </button>
+                </div>
               )}
             </div>
 

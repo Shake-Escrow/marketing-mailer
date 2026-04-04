@@ -55,6 +55,23 @@
   gap: 12px;
 }
 
+.db-load-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-load-limit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-load-limit-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .results {
   display: flex;
   flex-direction: column;
