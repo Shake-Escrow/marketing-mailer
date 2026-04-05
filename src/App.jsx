@@ -183,13 +183,19 @@ export default function App() {
     setDbLoadLimit(normalized || String(MAX_DB_RECIPIENT_LOAD))
   }
 
-  // Returns a copy of recipient with name fields filled in from defaultName when absent
-  const withDefaultName = (recipient) => {
+  // Returns a copy of recipient with name fields filled in from either the
+  // backend-resolved template name or the UI defaultName, but only when the
+  // recipient itself has no usable name fields.
+  const withDefaultName = (recipient, preferredName = '') => {
     const normalizedRecipient = normalizeRecipientGreetingName(recipient)
-    if (!defaultName.trim()) return normalizedRecipient
-    const fallback = defaultName.trim()
+    const fallback = String(preferredName || defaultName || '').trim()
+    if (!fallback) return normalizedRecipient
+
     const hasName = (normalizedRecipient.name || '').trim()
-    if (hasName) return normalizedRecipient
+    const hasFullName = (normalizedRecipient.full_name || normalizedRecipient.fullname || '').trim()
+    const hasFirstName = (normalizedRecipient.first_name || normalizedRecipient.firstname || '').trim()
+    if (hasName || hasFullName || hasFirstName) return normalizedRecipient
+
     const normalizedFallback = stripLeadingArticle(fallback) || fallback
     return {
       ...normalizedRecipient,
@@ -293,18 +299,26 @@ export default function App() {
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
+    const resolvedRecipient = withDefaultName(
+      previewRecipient || {},
+      previewEligibility?.template_variables?.name
+    )
     const variables = {
       ...(previewEligibility?.template_variables || {}),
-      ...withDefaultName(previewRecipient || {}),
+      ...resolvedRecipient,
     }
     return applyTemplate(docxData.html, variables)
   }, [docxData, previewRecipient, previewEligibility, defaultName])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
+    const resolvedRecipient = withDefaultName(
+      previewRecipient || {},
+      previewEligibility?.template_variables?.name
+    )
     const variables = {
       ...(previewEligibility?.template_variables || {}),
-      ...withDefaultName(previewRecipient || {}),
+      ...resolvedRecipient,
     }
     return applyTemplate(subject, variables)
   }, [subject, previewRecipient, previewEligibility, defaultName])
@@ -466,9 +480,13 @@ export default function App() {
             continue
           }
 
+          const resolvedRecipient = withDefaultName(
+            recipient,
+            contactEligibility.template_variables?.name
+          )
           const templateVariables = {
             ...(contactEligibility.template_variables || {}),
-            ...withDefaultName(recipient),
+            ...resolvedRecipient,
           }
           const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables))
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
@@ -476,7 +494,7 @@ export default function App() {
           await sendEmail(
             graphToken,
             normalizedEmail,
-            withDefaultName(recipient).name || recipient.company || recipient.email,
+            resolvedRecipient.name || recipient.company || recipient.email,
             personalizedSubject,
             personalizedHtml
           )
