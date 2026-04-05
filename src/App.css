@@ -63,13 +63,13 @@
 
 .db-load-limit-field {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .db-load-limit-field input {
-  width: 100%;
-  box-sizing: border-box;
+  width: 72px;
 }
 
 .results {
