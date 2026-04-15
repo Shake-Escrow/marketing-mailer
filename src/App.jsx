@@ -165,7 +165,7 @@ export default function App() {
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
   const canSendEmails =
-    username.endsWith('@shakedefi.email') || username.endsWith('@shakedefi.com')
+    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
 
   const normalizeDbLoadLimit = (value) => {
