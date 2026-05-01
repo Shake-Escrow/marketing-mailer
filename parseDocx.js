@@ -62,7 +62,7 @@ export async function parseDocxFile(file) {
           ? allChildren.slice(firstNonBlankIdx + 1)[secondNonBlankIdx]
           : null
 
-      if (nextEl && /^dear\s/i.test(nextEl.textContent.trim())) {
+      if (nextEl && /^(dear|hi|hello|hey)\s/i.test(nextEl.textContent.trim())) {
         // The first non-blank line is the subject
         subject = firstText
         firstEl.remove()
