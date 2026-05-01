@@ -202,11 +202,11 @@ function templateizeContent(html, subject) {
     '$1{{Auto Dealers}}$2'
   )
 
-  // "you {sell luxury vehicles, specialty cars, fleet inventory, or private sales}, Shake"
-  // Anchor: "you " … ", Shake"
+  // "Whether you {sell luxury vehicles, specialty cars, fleet inventory, or private sales}, Shake"
+  // Anchor: "Whether you " … ", Shake"
   // [^<]+? — lazy match; [^<] prevents crossing HTML tag boundaries
   body = body.replace(
-    /(\byou\s+)[^<]+?(,\s*Shake)/i,
+    /(\bWhether\s+you\s+)[^<]+?(,\s*Shake)/i,
     '$1{{sell luxury vehicles, specialty cars, fleet inventory, or private sales}}$2'
   )
 

@@ -1,9 +1,22 @@
 // src/utils/template.js
+
+// Maps explicit {{template_*}} token names (used in newer DOCX templates) to
+// the short variable keys used throughout the rest of the system.
+const TEMPLATE_KEY_ALIASES = {
+  template_name:             'name',
+  template_vehicle:          'vehicle',
+  template_dealerships:      'dealerships',
+  template_your_dealership:  'your dealership',
+  template_auto_dealers:     'auto dealers',
+  template_sell_description: 'sell luxury vehicles, specialty cars, fleet inventory, or private sales',
+}
+
 export function applyTemplate(template, variables = {}) {
   return template.replace(/\{\{(\s*[\w.,\- ]+\s*)\}\}/g, (match, key) => {
     const normalizedKey = key.trim().toLowerCase()
-    if (variables[normalizedKey] === undefined) return match
-    const value = variables[normalizedKey]
+    const resolvedKey = TEMPLATE_KEY_ALIASES[normalizedKey] ?? normalizedKey
+    if (variables[resolvedKey] === undefined) return match
+    const value = variables[resolvedKey]
     // If the token's first letter was uppercase, capitalise the value to match.
     // e.g. {{Vehicle}} → "Vehicle", {{vehicle}} → "vehicle", both from the same stored value.
     const firstLetter = key.trim()[0]
