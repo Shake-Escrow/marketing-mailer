@@ -165,7 +165,7 @@ export default function App() {
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
   const canSendEmails =
-    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com')
+    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
 
   const normalizeDbLoadLimit = (value) => {
@@ -368,7 +368,7 @@ export default function App() {
     if (!account) return
 
     if (!canRunApiFlow) {
-      setError('Please sign in with a @shakedefi or .onmicrosoft.com Microsoft account.')
+      setError('Please sign in with a @shakedefi, @shake-defi.com, or .onmicrosoft.com Microsoft account.')
       return
     }
 
@@ -581,7 +581,7 @@ export default function App() {
           {!isAuthenticated ? (
             <div>
               <p className="signed-in-text">
-                Sign in with your @shakedefi or .onmicrosoft.com Microsoft account to begin.
+                Sign in with your @shakedefi, @shake-defi.com, or .onmicrosoft.com Microsoft account to begin.
               </p>
               <button className="signin-btn" onClick={() => instance.loginPopup(loginRequest)}>
                 Microsoft Exchange Sign In
@@ -591,7 +591,7 @@ export default function App() {
             <div className="workflow">
               {!canRunApiFlow && (
                 <p className="error-text">
-                  Please use a @shakedefi or .onmicrosoft.com account.
+                  Please use a @shakedefi, @shake-defi.com, or .onmicrosoft.com account.
                 </p>
               )}
 
