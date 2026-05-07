@@ -152,6 +152,22 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.email-footer {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 0.78rem;
+  opacity: 0.55;
+}
+
+.email-footer p {
+  margin: 4px 0;
+}
+
+.email-footer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .recipient-scroll {
   display: flex;
   flex-wrap: wrap;

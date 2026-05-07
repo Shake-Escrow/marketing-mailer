@@ -715,6 +715,10 @@ export default function App() {
                     <strong>Subject:</strong> {previewSubject || '—'}
                   </p>
                   <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                  <div className="email-footer">
+                    <p>Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p>
+                    <p><a href="https://shakedefi.email/unsubscribe" target="_blank" rel="noreferrer">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p>
+                  </div>
                 </div>
               </div>
             )}
