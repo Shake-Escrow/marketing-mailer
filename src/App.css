@@ -152,6 +152,17 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.email-logo-wrap {
+  margin-top: 24px;
+  text-align: center;
+}
+
+.email-logo {
+  max-width: 160px;
+  width: 100%;
+  height: auto;
+}
+
 .email-footer {
   margin-top: 24px;
   text-align: center;

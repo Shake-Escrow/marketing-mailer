@@ -6,6 +6,7 @@ import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
+import shakeLogo from './assets/shake-logo_horizontal_color.png'
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -715,6 +716,9 @@ export default function App() {
                     <strong>Subject:</strong> {previewSubject || '—'}
                   </p>
                   <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                  <div className="email-logo-wrap">
+                    <img src={shakeLogo} alt="Shake Defi" className="email-logo" />
+                  </div>
                   <div className="email-footer">
                     <p>Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p>
                     <p><a href="https://shakedefi.email/unsubscribe" target="_blank" rel="noreferrer">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p>
