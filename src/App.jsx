@@ -152,6 +152,7 @@ export default function App() {
   const [activityLastSendAt, setActivityLastSendAt] = useState(null)
   const [now, setNow] = useState(() => Date.now())
   const [autoSending, setAutoSending] = useState(false)
+  const [sessionSentCount, setSessionSentCount] = useState(0)
 
   const dayEstimate = useMemo(() => {
     if (!activityBins || activityBins.length !== 7) return null
@@ -161,9 +162,7 @@ export default function App() {
       const a = 0.246, c = 1.75
       const { currentDay } = findCurrentDay(counts)
       const target = Math.round(a * currentDay ** 2 + c)
-      const sentToday = counts[6]
-      const remaining = Math.max(0, target - sentToday)
-      return { currentDay, target, sentToday, remaining }
+      return { currentDay, target }
     } catch {
       return null
     }
@@ -524,6 +523,7 @@ export default function App() {
       })
 
       setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'sent', rationale: contactEligibility.rationale }])
+      setSessionSentCount((n) => n + 1)
       advanceQueue()
       setActivityLastSendAt(new Date().toISOString())
     } catch (e) {
@@ -794,8 +794,8 @@ export default function App() {
                       <div className="histogram-estimate">
                         <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
                         <span>Today&apos;s target: <strong>{dayEstimate.target}</strong></span>
-                        <span>Sent today: <strong>{dayEstimate.sentToday}</strong></span>
-                        <span>Remaining: <strong>{dayEstimate.remaining}</strong></span>
+                        <span>Sent this session: <strong>{sessionSentCount}</strong></span>
+                        <span>Remaining: <strong>{csvData?.recipients?.length ?? 0}</strong></span>
                       </div>
                     )}
                     {sendSchedule && (
