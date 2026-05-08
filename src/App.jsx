@@ -257,6 +257,18 @@ export default function App() {
     }
   }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
+  const autoSendDisabledReason = !csvData?.recipients?.length
+    ? 'Load recipients to start auto-send.'
+    : !docxData
+      ? 'Upload a DOCX to start auto-send.'
+      : !subject.trim()
+        ? 'Enter a subject to start auto-send.'
+        : !sendSchedule
+          ? (dayEstimate && remainingDailyTarget <= 0
+              ? 'Daily target reached.'
+              : 'Waiting for pacing estimate.')
+          : ''
+
   useEffect(() => {
     if (autoLoadedRef.current) return
     if (!dayEstimate || remainingDailyTarget <= 0) return
@@ -847,25 +859,29 @@ export default function App() {
                         <span>Recipients queued: <strong>{csvData?.recipients?.length ?? 0}</strong></span>
                       </div>
                     )}
-                    {sendSchedule && (
-                      <div className="histogram-schedule">
-                        <span>Send every: <strong>{formatDuration(sendSchedule.periodMs)}</strong></span>
-                        {sendSchedule.lastSendTime && (
-                          <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
-                        )}
-                        {sendSchedule.timeUntilNextMs <= 0
-                          ? <span className="schedule-send-now">Send now</span>
-                          : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>
-                        }
-                        <button
-                          className={`auto-send-btn${autoSending ? ' auto-send-btn--active' : ''}`}
-                          onClick={() => setAutoSending((v) => !v)}
-                          disabled={!csvData?.recipients?.length || !docxData || !subject.trim()}
-                        >
-                          {autoSending ? 'Stop' : 'Start Auto-Send'}
-                        </button>
-                      </div>
-                    )}
+                    <div className="histogram-schedule">
+                      {sendSchedule ? (
+                        <>
+                          <span>Send every: <strong>{formatDuration(sendSchedule.periodMs)}</strong></span>
+                          {sendSchedule.lastSendTime && (
+                            <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
+                          )}
+                          {sendSchedule.timeUntilNextMs <= 0
+                            ? <span className="schedule-send-now">Send now</span>
+                            : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>
+                          }
+                        </>
+                      ) : (
+                        <span>Auto-send: <strong>{autoSendDisabledReason || 'Unavailable'}</strong></span>
+                      )}
+                      <button
+                        className={`auto-send-btn${autoSending ? ' auto-send-btn--active' : ''}`}
+                        onClick={() => setAutoSending((v) => !v)}
+                        disabled={!autoSending && Boolean(autoSendDisabledReason)}
+                      >
+                        {autoSending ? 'Stop' : 'Start Auto-Send'}
+                      </button>
+                    </div>
                   </div>
                 )
               })()}
