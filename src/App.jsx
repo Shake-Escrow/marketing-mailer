@@ -190,6 +190,12 @@ export default function App() {
     return () => { cancelled = true }
   }, [isAuthenticated, account])
 
+  const username = (account?.username || '').toLowerCase()
+  const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
+  const canSendEmails =
+    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
+  const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
+
   useEffect(() => {
     if (!isAuthenticated || !account || !canRunApiFlow) return
     let cancelled = false
@@ -234,12 +240,6 @@ export default function App() {
     parseDocxModulePromise ??= import('../parseDocx')
     return parseDocxModulePromise
   }
-
-  const username = (account?.username || '').toLowerCase()
-  const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
-  const canSendEmails =
-    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
-  const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
 
   const normalizeDbLoadLimit = (value) => {
     const digitsOnly = String(value || '').replace(/\D/g, '')
