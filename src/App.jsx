@@ -219,6 +219,7 @@ export default function App() {
 
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
+  const mustUploadCsvRecipients = username.startsWith('jmusila@')
   const canSendEmails =
     username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
@@ -290,9 +291,10 @@ export default function App() {
     if (!dayEstimate || remainingDailyTarget <= 0) return
     if (csvData || dbRecipientsLoading) return
     if (!isAuthenticated || !account || !canRunApiFlow) return
+    if (mustUploadCsvRecipients) return
     autoLoadedRef.current = true
     handleLoadFromDb(remainingDailyTarget)
-  }, [dayEstimate, remainingDailyTarget, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow])
+  }, [dayEstimate, remainingDailyTarget, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow, mustUploadCsvRecipients])
 
   useEffect(() => {
     if (!autoSending) {
@@ -426,6 +428,10 @@ export default function App() {
 
   const handleLoadFromDb = async (limitOverride) => {
     if (!account) return
+    if (mustUploadCsvRecipients) {
+      setError('This account must upload recipients from a CSV file.')
+      return
+    }
     const hasLimitOverride = typeof limitOverride === 'number' || typeof limitOverride === 'string'
     const rawLimit = hasLimitOverride ? String(limitOverride) : dbLoadLimit
     const requestedLimit = Math.min(
@@ -934,30 +940,30 @@ export default function App() {
                 <input type="file" accept=".csv" onChange={handleCsvUpload} />
               </label>
 
-              {!csvData && canRunApiFlow && (
-                <div className="db-load-card">
-                  <label className="db-load-limit-field">
-                    <span>Recipients to load from database (max {MAX_DB_RECIPIENT_LOAD})</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={dbLoadLimit}
-                      disabled={dbRecipientsLoading}
-                      onChange={(e) => setDbLoadLimit(normalizeDbLoadLimit(e.target.value))}
-                      onBlur={(e) => commitDbLoadLimit(e.target.value)}
-                      placeholder={String(MAX_DB_RECIPIENT_LOAD)}
-                    />
-                  </label>
+              {!csvData && canRunApiFlow && !mustUploadCsvRecipients && (
+                  <div className="db-load-card">
+                    <label className="db-load-limit-field">
+                      <span>Recipients to load from database (max {MAX_DB_RECIPIENT_LOAD})</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={dbLoadLimit}
+                        disabled={dbRecipientsLoading}
+                        onChange={(e) => setDbLoadLimit(normalizeDbLoadLimit(e.target.value))}
+                        onBlur={(e) => commitDbLoadLimit(e.target.value)}
+                        placeholder={String(MAX_DB_RECIPIENT_LOAD)}
+                      />
+                    </label>
 
-                  <button
-                    className="upload-card"
-                    disabled={dbRecipientsLoading}
-                    onClick={() => handleLoadFromDb()}
-                    style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
-                  >
-                    <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
-                  </button>
-                </div>
+                    <button
+                      className="upload-card"
+                      disabled={dbRecipientsLoading}
+                      onClick={() => handleLoadFromDb()}
+                      style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
+                    >
+                      <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
+                    </button>
+                  </div>
               )}
             </div>
 
