@@ -263,3 +263,36 @@
   white-space: nowrap;
   line-height: 1;
 }
+
+.histogram-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #30363d;
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.histogram-estimate strong {
+  color: #e6edf3;
+}
+
+.histogram-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.histogram-schedule strong {
+  color: #e6edf3;
+}
+
+.schedule-send-now {
+  font-weight: 600;
+  color: #3fb950;
+}

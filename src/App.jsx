@@ -6,6 +6,7 @@ import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
+import { findCurrentDay } from './utils/dayEstimator'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
 
@@ -117,6 +118,16 @@ const normalizeRecipientGreetingName = (recipient) => {
   }
 }
 
+const formatDuration = (ms) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -136,6 +147,24 @@ export default function App() {
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
   const [activityBins, setActivityBins] = useState(null)
+  const [activityLastSendAt, setActivityLastSendAt] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
+
+  const dayEstimate = useMemo(() => {
+    if (!activityBins || activityBins.length !== 7) return null
+    const counts = activityBins.map((b) => b.count)
+    if (counts.every((c) => c === 0)) return null
+    try {
+      const a = 0.246, c = 1.75
+      const { currentDay } = findCurrentDay(counts)
+      const target = Math.round(a * currentDay ** 2 + c)
+      const sentToday = counts[6]
+      const remaining = Math.max(0, target - sentToday)
+      return { currentDay, target, sentToday, remaining }
+    } catch {
+      return null
+    }
+  }, [activityBins])
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
@@ -165,10 +194,29 @@ export default function App() {
     let cancelled = false
     getAccessToken(instance, account, loginRequest)
       .then((token) => fetchContactsActivity(token, { clientId: account.username }))
-      .then(({ bins }) => { if (!cancelled) setActivityBins(bins) })
+      .then(({ bins, last_send_at }) => {
+      if (!cancelled) {
+        setActivityBins(bins)
+        setActivityLastSendAt(last_send_at)
+      }
+    })
       .catch(() => {})
     return () => { cancelled = true }
   }, [isAuthenticated, account, canRunApiFlow])
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 10000)
+    return () => clearInterval(id)
+  }, [])
+
+  const sendSchedule = useMemo(() => {
+    if (!dayEstimate || dayEstimate.target <= 0 || !activityLastSendAt) return null
+    const periodMs = (24 * 60 * 60 * 1000) / dayEstimate.target
+    const lastSendTime = new Date(activityLastSendAt).getTime()
+    const nextSendTime = lastSendTime + periodMs
+    const timeUntilNextMs = nextSendTime - now
+    return { periodMs, lastSendTime, nextSendTime, timeUntilNextMs }
+  }, [dayEstimate, activityLastSendAt, now])
 
   let parseDocxModulePromise
 
@@ -636,6 +684,24 @@ export default function App() {
                         )
                       })}
                     </div>
+                    {dayEstimate && (
+                      <div className="histogram-estimate">
+                        <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
+                        <span>Today&apos;s target: <strong>{dayEstimate.target}</strong></span>
+                        <span>Sent today: <strong>{dayEstimate.sentToday}</strong></span>
+                        <span>Remaining: <strong>{dayEstimate.remaining}</strong></span>
+                      </div>
+                    )}
+                    {sendSchedule && (
+                      <div className="histogram-schedule">
+                        <span>Send every: <strong>{formatDuration(sendSchedule.periodMs)}</strong></span>
+                        <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
+                        {sendSchedule.timeUntilNextMs <= 0
+                          ? <span className="schedule-send-now">Send now</span>
+                          : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>
+                        }
+                      </div>
+                    )}
                   </div>
                 )
               })()}

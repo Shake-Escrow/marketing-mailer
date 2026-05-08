@@ -346,7 +346,7 @@ export async function fetchContactsActivity(accessToken, options = {}) {
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
-  return { bins: body.bins || [] }
+  return { bins: body.bins || [], last_send_at: body.last_send_at || null }
 }
 
 /**
