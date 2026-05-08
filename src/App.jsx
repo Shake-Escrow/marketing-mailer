@@ -134,6 +134,7 @@ export default function App() {
   const account = accounts[0]
   const sendLogRef = useRef(null)
   const eligibilityCache = useRef(new Map())
+  const autoLoadedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
   const [docxData, setDocxData] = useState(null)
@@ -217,6 +218,15 @@ export default function App() {
     const timeUntilNextMs = nextSendTime - now
     return { periodMs, lastSendTime, nextSendTime, timeUntilNextMs }
   }, [dayEstimate, activityLastSendAt, now])
+
+  useEffect(() => {
+    if (autoLoadedRef.current) return
+    if (!dayEstimate || dayEstimate.target <= 0) return
+    if (csvData || dbRecipientsLoading) return
+    if (!isAuthenticated || !account || !canRunApiFlow) return
+    autoLoadedRef.current = true
+    handleLoadFromDb(dayEstimate.target)
+  }, [dayEstimate, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow])
 
   let parseDocxModulePromise
 
@@ -304,10 +314,11 @@ export default function App() {
     }
   }
 
-  const handleLoadFromDb = async () => {
+  const handleLoadFromDb = async (limitOverride) => {
     if (!account) return
+    const rawLimit = limitOverride != null ? String(limitOverride) : dbLoadLimit
     const requestedLimit = Math.min(
-      Math.max(parseInt(normalizeDbLoadLimit(dbLoadLimit) || String(MAX_DB_RECIPIENT_LOAD), 10), 1),
+      Math.max(parseInt(normalizeDbLoadLimit(rawLimit) || String(MAX_DB_RECIPIENT_LOAD), 10), 1),
       MAX_DB_RECIPIENT_LOAD
     )
 
