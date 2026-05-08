@@ -128,6 +128,12 @@ const formatDuration = (ms) => {
   return `${s}s`
 }
 
+const getNextLocalMidnightTime = (timestamp) => {
+  const date = new Date(timestamp)
+  date.setHours(24, 0, 0, 0)
+  return date.getTime()
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -153,6 +159,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now())
   const [autoSending, setAutoSending] = useState(false)
   const [sessionSentCount, setSessionSentCount] = useState(0)
+  const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
 
   const dayEstimate = useMemo(() => {
     if (!activityBins || activityBins.length !== 7) return null
@@ -160,9 +167,14 @@ export default function App() {
     if (counts.every((c) => c === 0)) return null
     try {
       const a = 0.246, c = 1.75
-      const { currentDay } = findCurrentDay(counts)
+      const completedDayCounts = counts.slice(0, -1)
+      const shouldIgnorePartialToday = completedDayCounts.some((count) => count > 0)
+      const { currentDay } = shouldIgnorePartialToday
+        ? findCurrentDay(completedDayCounts, a, c, counts.length - 1)
+        : findCurrentDay(counts, a, c)
       const target = Math.round(a * currentDay ** 2 + c)
-      return { currentDay, target }
+      const sentToday = counts[counts.length - 1] || 0
+      return { currentDay, target, sentToday }
     } catch {
       return null
     }
@@ -171,6 +183,13 @@ export default function App() {
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
   const [dbLoadLimit, setDbLoadLimit] = useState(String(MAX_DB_RECIPIENT_LOAD))
+
+  const sentTodayWithSession = dayEstimate
+    ? dayEstimate.sentToday + sessionSentCount
+    : sessionSentCount
+  const remainingDailyTarget = dayEstimate
+    ? Math.max(dayEstimate.target - sentTodayWithSession, 0)
+    : 0
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -218,34 +237,62 @@ export default function App() {
   }, [])
 
   const sendSchedule = useMemo(() => {
-    if (!dayEstimate || dayEstimate.target <= 0 || !activityLastSendAt) return null
-    const periodMs = (24 * 60 * 60 * 1000) / dayEstimate.target
-    const lastSendTime = new Date(activityLastSendAt).getTime()
-    const nextSendTime = lastSendTime + periodMs
+    if (!dayEstimate || dayEstimate.target <= 0 || remainingDailyTarget <= 0) return null
+    const dayEndTime = getNextLocalMidnightTime(now)
+    const remainingDayMs = Math.max(dayEndTime - now, 0)
+    if (remainingDayMs <= 0) return null
+    const periodMs = remainingDayMs / remainingDailyTarget
+    const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
+    const nextSendTime = scheduledNextSendAt ?? now + periodMs
     const timeUntilNextMs = nextSendTime - now
-    return { periodMs, lastSendTime, nextSendTime, timeUntilNextMs }
-  }, [dayEstimate, activityLastSendAt, now])
+    return {
+      periodMs,
+      lastSendTime,
+      nextSendTime,
+      timeUntilNextMs,
+      dayEndTime,
+      remainingDayMs,
+      remainingDailyTarget,
+      sentToday: sentTodayWithSession,
+    }
+  }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
   useEffect(() => {
     if (autoLoadedRef.current) return
-    if (!dayEstimate || dayEstimate.target <= 0) return
+    if (!dayEstimate || remainingDailyTarget <= 0) return
     if (csvData || dbRecipientsLoading) return
     if (!isAuthenticated || !account || !canRunApiFlow) return
     autoLoadedRef.current = true
-    handleLoadFromDb(dayEstimate.target)
-  }, [dayEstimate, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow])
+    handleLoadFromDb(remainingDailyTarget)
+  }, [dayEstimate, remainingDailyTarget, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow])
 
   useEffect(() => {
-    if (!autoSending) return
-    if (!dayEstimate?.target || !activityLastSendAt) return
+    if (!autoSending) {
+      setScheduledNextSendAt(null)
+      return
+    }
+    if (!dayEstimate || remainingDailyTarget <= 0) {
+      setAutoSending(false)
+      setScheduledNextSendAt(null)
+      return
+    }
     if (!csvData?.recipients?.length) {
       setAutoSending(false)
+      setScheduledNextSendAt(null)
       return
     }
 
-    const periodMs = (24 * 60 * 60 * 1000) / dayEstimate.target
-    const nextSendTime = new Date(activityLastSendAt).getTime() + periodMs
-    const delay = Math.max(0, nextSendTime - Date.now())
+    const scheduleStartTime = Date.now()
+    const dayEndTime = getNextLocalMidnightTime(scheduleStartTime)
+    const remainingDayMs = Math.max(dayEndTime - scheduleStartTime, 0)
+    if (remainingDayMs <= 0) {
+      setAutoSending(false)
+      setScheduledNextSendAt(null)
+      return
+    }
+    const delay = remainingDayMs / remainingDailyTarget
+    const nextSendTime = scheduleStartTime + delay
+    setScheduledNextSendAt(nextSendTime)
 
     const timer = setTimeout(async () => {
       if (autoSendInProgressRef.current) return
@@ -258,7 +305,7 @@ export default function App() {
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [autoSending, activityLastSendAt, dayEstimate, csvData?.recipients?.length])
+  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length])
 
   let parseDocxModulePromise
 
@@ -794,14 +841,18 @@ export default function App() {
                       <div className="histogram-estimate">
                         <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
                         <span>Today&apos;s target: <strong>{dayEstimate.target}</strong></span>
+                        <span>Sent today: <strong>{sentTodayWithSession}</strong></span>
+                        <span>Daily target left: <strong>{remainingDailyTarget}</strong></span>
                         <span>Sent this session: <strong>{sessionSentCount}</strong></span>
-                        <span>Remaining: <strong>{csvData?.recipients?.length ?? 0}</strong></span>
+                        <span>Recipients queued: <strong>{csvData?.recipients?.length ?? 0}</strong></span>
                       </div>
                     )}
                     {sendSchedule && (
                       <div className="histogram-schedule">
                         <span>Send every: <strong>{formatDuration(sendSchedule.periodMs)}</strong></span>
-                        <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
+                        {sendSchedule.lastSendTime && (
+                          <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
+                        )}
                         {sendSchedule.timeUntilNextMs <= 0
                           ? <span className="schedule-send-now">Send now</span>
                           : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>

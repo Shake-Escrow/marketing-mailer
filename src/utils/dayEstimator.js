@@ -1,14 +1,17 @@
 /**
- * Given 7 consecutive days of email counts, estimates what day the
+ * Given consecutive days of email counts, estimates what day the
  * window starts on by minimizing SSE against y ≈ a*x² + c.
  *
- * @param {number[]} emails - Array of 7 observed email counts
+ * @param {number[]} emails - Array of observed email counts
  * @param {number} a - Quadratic coefficient (default 0.246)
  * @param {number} c - Constant term (default 1.75)
+ * @param {number} currentDayOffset - Offset from the first observed day to the current day
  * @returns {{ startDay: number, currentDay: number, sse: number }}
  */
-export function findCurrentDay(emails, a = 0.246, c = 1.75) {
-  if (emails.length !== 7) throw new Error("Expected exactly 7 days of data");
+export function findCurrentDay(emails, a = 0.246, c = 1.75, currentDayOffset = emails.length - 1) {
+  if (!Array.isArray(emails) || emails.length < 1) {
+    throw new Error("Expected at least one day of data");
+  }
 
   function sse(d) {
     return emails.reduce((sum, y, i) => {
@@ -45,7 +48,7 @@ export function findCurrentDay(emails, a = 0.246, c = 1.75) {
 
   const refinedD = (lo + hi) / 2;
   const startDay = Math.round(refinedD);
-  const currentDay = startDay + 6; // last day of the 7-day window
+  const currentDay = startDay + currentDayOffset;
 
   return {
     startDay,
