@@ -7,6 +7,9 @@ import { buildMarketingContactPayload, checkMarketingContact, createMarketingCon
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
+import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
+
+const EMAIL_SIGNATURE_HTML = `<div style="margin-top:24px;text-align:center;"><img src="${shakeLogoDataUri}" alt="Shake Defi" style="max-width:192px;width:100%;height:auto;"></div><div style="margin-top:24px;text-align:center;font-size:0.78rem;opacity:0.55;"><p style="margin:4px 0;">Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p><p style="margin:4px 0;"><a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p></div>`
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -489,7 +492,7 @@ export default function App() {
             ...(contactEligibility.template_variables || {}),
             ...resolvedRecipient,
           }
-          const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables))
+          const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
           await sendEmail(
