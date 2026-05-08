@@ -832,7 +832,9 @@ export default function App() {
                   </p>
                   <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
                   <div className="email-logo-wrap">
-                    <img src={shakeLogo} alt="Shake Defi" className="email-logo" />
+                    <a href="https://shakedefi.com" target="_blank" rel="noopener noreferrer">
+                      <img src={shakeLogo} alt="Shake Defi" className="email-logo" />
+                    </a>
                   </div>
                   <div className="email-footer">
                     <p>Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p>
