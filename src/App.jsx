@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
@@ -135,6 +135,7 @@ export default function App() {
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
+  const [activityBins, setActivityBins] = useState(null)
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
@@ -158,6 +159,16 @@ export default function App() {
       })
     return () => { cancelled = true }
   }, [isAuthenticated, account])
+
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canRunApiFlow) return
+    let cancelled = false
+    getAccessToken(instance, account, loginRequest)
+      .then((token) => fetchContactsActivity(token, { clientId: account.username }))
+      .then(({ bins }) => { if (!cancelled) setActivityBins(bins) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAuthenticated, account, canRunApiFlow])
 
   let parseDocxModulePromise
 
@@ -604,6 +615,30 @@ export default function App() {
                   Dry run mode: marketing contact checks will run, but emails will not be sent and Last Contacted will not be updated.
                 </p>
               )}
+
+              {activityBins && (() => {
+                const maxCount = Math.max(...activityBins.map((b) => b.count), 1)
+                return (
+                  <div className="activity-histogram">
+                    <h3>Your sends — last 7 days</h3>
+                    <div className="histogram-bars">
+                      {activityBins.map(({ day, count }) => {
+                        const heightPct = count > 0 ? Math.max(Math.round((count / maxCount) * 100), 6) : 0
+                        const label = new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })
+                        return (
+                          <div key={day} className="histogram-col">
+                            <span className="histogram-count">{count > 0 ? count : ''}</span>
+                            <div className="histogram-track">
+                              <div className="histogram-bar" style={{ height: `${heightPct}%` }} />
+                            </div>
+                            <span className="histogram-label">{label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="help-box">
               <h2>Preparing your files</h2>

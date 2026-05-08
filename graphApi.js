@@ -330,6 +330,26 @@ export async function getMe(accessToken) {
 }
 
 /**
+ * Fetches a 7-day histogram of contacts last_contacted by the authenticated user.
+ * Returns bins: [{ day: "YYYY-MM-DD", count: N }, ...] ordered oldest to newest.
+ * @param {string} accessToken
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ bins: { day: string, count: number }[] }}
+ */
+export async function fetchContactsActivity(accessToken, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/activity`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { bins: body.bins || [] }
+}
+
+/**
  * Fetches contacts that have never been contacted (last_contacted IS NULL)
  * and whose domain is assessed as appropriate, complete with merged template_variables.
  * @param {string} accessToken
