@@ -128,6 +128,14 @@ const formatDuration = (ms) => {
   return `${s}s`
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const CAMPAIGN_CURVE_A = 0.246
+const CAMPAIGN_CURVE_C = 1.75
+
+const getDailyTargetForCampaignDay = (campaignDay) => (
+  Math.round(CAMPAIGN_CURVE_A * campaignDay ** 2 + CAMPAIGN_CURVE_C)
+)
+
 const getNextLocalMidnightTime = (timestamp) => {
   const date = new Date(timestamp)
   date.setHours(24, 0, 0, 0)
@@ -166,13 +174,12 @@ export default function App() {
     const counts = activityBins.map((b) => b.count)
     if (counts.every((c) => c === 0)) return null
     try {
-      const a = 0.246, c = 1.75
       const completedDayCounts = counts.slice(0, -1)
       const shouldIgnorePartialToday = completedDayCounts.some((count) => count > 0)
       const { currentDay } = shouldIgnorePartialToday
-        ? findCurrentDay(completedDayCounts, a, c, counts.length - 1)
-        : findCurrentDay(counts, a, c)
-      const target = Math.round(a * currentDay ** 2 + c)
+        ? findCurrentDay(completedDayCounts, CAMPAIGN_CURVE_A, CAMPAIGN_CURVE_C, counts.length - 1)
+        : findCurrentDay(counts, CAMPAIGN_CURVE_A, CAMPAIGN_CURVE_C)
+      const target = getDailyTargetForCampaignDay(currentDay)
       const sentToday = counts[counts.length - 1] || 0
       return { currentDay, target, sentToday }
     } catch {
@@ -237,13 +244,22 @@ export default function App() {
   }, [])
 
   const sendSchedule = useMemo(() => {
-    if (!dayEstimate || dayEstimate.target <= 0 || remainingDailyTarget <= 0) return null
+    if (!dayEstimate || dayEstimate.target <= 0) return null
     const dayEndTime = getNextLocalMidnightTime(now)
     const remainingDayMs = Math.max(dayEndTime - now, 0)
     if (remainingDayMs <= 0) return null
-    const periodMs = remainingDayMs / remainingDailyTarget
+    const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
+    const activeDailyTarget = remainingDailyTarget > 0 ? remainingDailyTarget : nextDayTarget
+    if (activeDailyTarget <= 0) return null
+    const periodMs = remainingDailyTarget > 0
+      ? remainingDayMs / activeDailyTarget
+      : DAY_MS / activeDailyTarget
     const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
-    const nextSendTime = scheduledNextSendAt ?? now + periodMs
+    const nextSendTime = scheduledNextSendAt ?? (
+      remainingDailyTarget > 0
+        ? now + periodMs
+        : dayEndTime + periodMs
+    )
     const timeUntilNextMs = nextSendTime - now
     return {
       periodMs,
@@ -252,8 +268,10 @@ export default function App() {
       timeUntilNextMs,
       dayEndTime,
       remainingDayMs,
-      remainingDailyTarget,
+      remainingDailyTarget: activeDailyTarget,
       sentToday: sentTodayWithSession,
+      startsTomorrow: remainingDailyTarget <= 0,
+      targetCampaignDay: remainingDailyTarget > 0 ? dayEstimate.currentDay : dayEstimate.currentDay + 1,
     }
   }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
@@ -264,9 +282,7 @@ export default function App() {
       : !subject.trim()
         ? 'Enter a subject to start auto-send.'
         : !sendSchedule
-          ? (dayEstimate && remainingDailyTarget <= 0
-              ? 'Daily target reached.'
-              : 'Waiting for pacing estimate.')
+          ? 'Waiting for pacing estimate.'
           : ''
 
   useEffect(() => {
@@ -283,7 +299,7 @@ export default function App() {
       setScheduledNextSendAt(null)
       return
     }
-    if (!dayEstimate || remainingDailyTarget <= 0) {
+    if (!dayEstimate) {
       setAutoSending(false)
       setScheduledNextSendAt(null)
       return
@@ -302,7 +318,16 @@ export default function App() {
       setScheduledNextSendAt(null)
       return
     }
-    const delay = remainingDayMs / remainingDailyTarget
+    const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
+    const activeDailyTarget = remainingDailyTarget > 0 ? remainingDailyTarget : nextDayTarget
+    if (activeDailyTarget <= 0) {
+      setAutoSending(false)
+      setScheduledNextSendAt(null)
+      return
+    }
+    const delay = remainingDailyTarget > 0
+      ? remainingDayMs / activeDailyTarget
+      : remainingDayMs + (DAY_MS / activeDailyTarget)
     const nextSendTime = scheduleStartTime + delay
     setScheduledNextSendAt(nextSendTime)
 
