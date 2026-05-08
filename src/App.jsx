@@ -426,7 +426,8 @@ export default function App() {
 
   const handleLoadFromDb = async (limitOverride) => {
     if (!account) return
-    const rawLimit = limitOverride != null ? String(limitOverride) : dbLoadLimit
+    const hasLimitOverride = typeof limitOverride === 'number' || typeof limitOverride === 'string'
+    const rawLimit = hasLimitOverride ? String(limitOverride) : dbLoadLimit
     const requestedLimit = Math.min(
       Math.max(parseInt(normalizeDbLoadLimit(rawLimit) || String(MAX_DB_RECIPIENT_LOAD), 10), 1),
       MAX_DB_RECIPIENT_LOAD
@@ -951,7 +952,7 @@ export default function App() {
                   <button
                     className="upload-card"
                     disabled={dbRecipientsLoading}
-                    onClick={handleLoadFromDb}
+                    onClick={() => handleLoadFromDb()}
                     style={{ cursor: dbRecipientsLoading ? 'wait' : 'pointer' }}
                   >
                     <span>{dbRecipientsLoading ? 'Loading from database…' : '⬇️ Load recipients from database'}</span>
