@@ -150,6 +150,7 @@ export default function App() {
   const eligibilityCache = useRef(new Map())
   const autoLoadedRef = useRef(false)
   const autoSendInProgressRef = useRef(false)
+  const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
   const [docxData, setDocxData] = useState(null)
@@ -197,6 +198,18 @@ export default function App() {
   const remainingDailyTarget = dayEstimate
     ? Math.max(dayEstimate.target - sentTodayWithSession, 0)
     : 0
+  const projectedNext24HourRecipientLoad = useMemo(() => {
+    if (!dayEstimate) return null
+
+    const dayEndTime = getNextLocalMidnightTime(now)
+    const remainingCurrentDayMs = Math.max(dayEndTime - now, 0)
+    const nextDayWindowMs = Math.max(DAY_MS - remainingCurrentDayMs, 0)
+    const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
+    const projectedNextDaySends = Math.ceil((nextDayWindowMs / DAY_MS) * nextDayTarget)
+    const projectedSendCount = remainingDailyTarget + projectedNextDaySends
+
+    return Math.min(Math.max(projectedSendCount, 1), MAX_DB_RECIPIENT_LOAD)
+  }, [dayEstimate, now, remainingDailyTarget])
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -288,13 +301,19 @@ export default function App() {
 
   useEffect(() => {
     if (autoLoadedRef.current) return
-    if (!dayEstimate || remainingDailyTarget <= 0) return
+    if (projectedNext24HourRecipientLoad == null) return
     if (csvData || dbRecipientsLoading) return
     if (!isAuthenticated || !account || !canRunApiFlow) return
     if (mustUploadCsvRecipients) return
     autoLoadedRef.current = true
-    handleLoadFromDb(remainingDailyTarget)
-  }, [dayEstimate, remainingDailyTarget, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow, mustUploadCsvRecipients])
+    handleLoadFromDb(projectedNext24HourRecipientLoad)
+  }, [projectedNext24HourRecipientLoad, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow, mustUploadCsvRecipients])
+
+  useEffect(() => {
+    if (projectedNext24HourRecipientLoad == null) return
+    if (dbLoadLimitEditedRef.current || csvData) return
+    setDbLoadLimit(String(projectedNext24HourRecipientLoad))
+  }, [projectedNext24HourRecipientLoad, csvData])
 
   useEffect(() => {
     if (!autoSending) {
@@ -886,7 +905,7 @@ export default function App() {
                         <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
                         <span>Today&apos;s target: <strong>{dayEstimate.target}</strong></span>
                         <span>Sent today: <strong>{sentTodayWithSession}</strong></span>
-                        <span>Daily target left: <strong>{remainingDailyTarget}</strong></span>
+                        <span>Next 24h sends: <strong>{projectedNext24HourRecipientLoad}</strong></span>
                         <span>Sent this session: <strong>{sessionSentCount}</strong></span>
                         <span>Recipients queued: <strong>{csvData?.recipients?.length ?? 0}</strong></span>
                       </div>
@@ -949,9 +968,15 @@ export default function App() {
                         inputMode="numeric"
                         value={dbLoadLimit}
                         disabled={dbRecipientsLoading}
-                        onChange={(e) => setDbLoadLimit(normalizeDbLoadLimit(e.target.value))}
-                        onBlur={(e) => commitDbLoadLimit(e.target.value)}
-                        placeholder={String(MAX_DB_RECIPIENT_LOAD)}
+                        onChange={(e) => {
+                          dbLoadLimitEditedRef.current = true
+                          setDbLoadLimit(normalizeDbLoadLimit(e.target.value))
+                        }}
+                        onBlur={(e) => {
+                          dbLoadLimitEditedRef.current = true
+                          commitDbLoadLimit(e.target.value)
+                        }}
+                        placeholder={projectedNext24HourRecipientLoad == null ? String(MAX_DB_RECIPIENT_LOAD) : String(projectedNext24HourRecipientLoad)}
                       />
                     </label>
 
