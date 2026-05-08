@@ -135,6 +135,7 @@ export default function App() {
   const sendLogRef = useRef(null)
   const eligibilityCache = useRef(new Map())
   const autoLoadedRef = useRef(false)
+  const autoSendInProgressRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
   const [docxData, setDocxData] = useState(null)
@@ -150,6 +151,7 @@ export default function App() {
   const [activityBins, setActivityBins] = useState(null)
   const [activityLastSendAt, setActivityLastSendAt] = useState(null)
   const [now, setNow] = useState(() => Date.now())
+  const [autoSending, setAutoSending] = useState(false)
 
   const dayEstimate = useMemo(() => {
     if (!activityBins || activityBins.length !== 7) return null
@@ -233,6 +235,31 @@ export default function App() {
     autoLoadedRef.current = true
     handleLoadFromDb(dayEstimate.target)
   }, [dayEstimate, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow])
+
+  useEffect(() => {
+    if (!autoSending) return
+    if (!dayEstimate?.target || !activityLastSendAt) return
+    if (!csvData?.recipients?.length) {
+      setAutoSending(false)
+      return
+    }
+
+    const periodMs = (24 * 60 * 60 * 1000) / dayEstimate.target
+    const nextSendTime = new Date(activityLastSendAt).getTime() + periodMs
+    const delay = Math.max(0, nextSendTime - Date.now())
+
+    const timer = setTimeout(async () => {
+      if (autoSendInProgressRef.current) return
+      autoSendInProgressRef.current = true
+      try {
+        await sendNextRecipient()
+      } finally {
+        autoSendInProgressRef.current = false
+      }
+    }, delay)
+
+    return () => clearTimeout(timer)
+  }, [autoSending, activityLastSendAt, dayEstimate, csvData?.recipients?.length])
 
   let parseDocxModulePromise
 
@@ -437,6 +464,74 @@ export default function App() {
 
     return () => { cancelled = true }
   }, [selectedRecipient, csvData, isAuthenticated, account, canRunApiFlow])
+
+  const advanceQueue = () => {
+    setCsvData((prev) => {
+      if (!prev?.recipients?.length) return prev
+      const [, ...rest] = prev.recipients
+      return { ...prev, recipients: rest }
+    })
+  }
+
+  const sendNextRecipient = async () => {
+    if (!account || !csvData?.recipients?.length || !docxData) return
+
+    const recipient = csvData.recipients[0]
+    const normalizedEmail = recipient.email.trim().toLowerCase()
+    const graphToken = await getAccessToken(instance, account, loginRequest)
+
+    try {
+      const contactPayload = buildMarketingContactPayload(recipient)
+      const marketingContactResult = await createMarketingContact(graphToken, contactPayload, {
+        clientId: account.username,
+      })
+
+      if (marketingContactResult.contacted) {
+        setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-contacted' }])
+        advanceQueue()
+        setActivityLastSendAt(new Date().toISOString())
+        return
+      }
+
+      const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
+      const contactEligibility = cachedEligibility ?? await checkMarketingContact(graphToken, normalizedEmail, { clientId: account.username })
+      if (!cachedEligibility) eligibilityCache.current.set(normalizedEmail, contactEligibility)
+
+      if (!contactEligibility.emailable) {
+        setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-not-emailable', reason: contactEligibility.reason, rationale: contactEligibility.rationale }])
+        advanceQueue()
+        setActivityLastSendAt(new Date().toISOString())
+        return
+      }
+
+      if (!canSendEmails) {
+        setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'checked-only', rationale: contactEligibility.rationale }])
+        advanceQueue()
+        setActivityLastSendAt(new Date().toISOString())
+        return
+      }
+
+      const resolvedRecipient = withDefaultName(recipient, contactEligibility.template_variables?.name)
+      const templateVariables = { ...(contactEligibility.template_variables || {}), ...resolvedRecipient }
+      const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
+      const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
+
+      await sendEmail(graphToken, normalizedEmail, resolvedRecipient.name || recipient.company || recipient.email, personalizedSubject, personalizedHtml)
+
+      await createMarketingContact(graphToken, null, {
+        clientId: account.username,
+        previousSuccessfulEmail: normalizedEmail,
+      })
+
+      setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'sent', rationale: contactEligibility.rationale }])
+      advanceQueue()
+      setActivityLastSendAt(new Date().toISOString())
+    } catch (e) {
+      setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'failed', error: e.message }])
+      advanceQueue()
+      setActivityLastSendAt(new Date().toISOString())
+    }
+  }
 
   const handleSendAll = async () => {
     if (!account) return
@@ -711,6 +806,13 @@ export default function App() {
                           ? <span className="schedule-send-now">Send now</span>
                           : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>
                         }
+                        <button
+                          className={`auto-send-btn${autoSending ? ' auto-send-btn--active' : ''}`}
+                          onClick={() => setAutoSending((v) => !v)}
+                          disabled={!csvData?.recipients?.length || !docxData || !subject.trim()}
+                        >
+                          {autoSending ? 'Stop' : 'Start Auto-Send'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -846,7 +948,7 @@ export default function App() {
 
             <button
               className="send-btn"
-              disabled={sending || !canRunApiFlow || !docxData || !csvData?.recipients?.length || !subject.trim()}
+              disabled={sending || autoSending || !canRunApiFlow || !docxData || !csvData?.recipients?.length || !subject.trim()}
               onClick={handleSendAll}
             >
               {sending ? 'Sending…' : 'Send All Emails'}

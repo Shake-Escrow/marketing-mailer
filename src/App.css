@@ -296,3 +296,33 @@
   font-weight: 600;
   color: #3fb950;
 }
+
+.auto-send-btn {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #21262d;
+  color: #e6edf3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auto-send-btn:hover:not(:disabled) {
+  background: #30363d;
+}
+
+.auto-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.auto-send-btn--active {
+  border-color: #f85149;
+  color: #f85149;
+}
+
+.auto-send-btn--active:hover:not(:disabled) {
+  background: #2d1b1b;
+}
