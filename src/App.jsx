@@ -142,6 +142,11 @@ const getNextLocalMidnightTime = (timestamp) => {
   return date.getTime()
 }
 
+const getRandomSendJitterMs = (periodMs) => {
+  const jitterRangeMs = periodMs * 0.2
+  return (Math.random() * 2 - 1) * jitterRangeMs
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -346,9 +351,13 @@ export default function App() {
       setScheduledNextSendAt(null)
       return
     }
-    const delay = remainingDailyTarget > 0
+    const periodMs = remainingDailyTarget > 0
       ? remainingDayMs / activeDailyTarget
-      : remainingDayMs + (DAY_MS / activeDailyTarget)
+      : DAY_MS / activeDailyTarget
+    const baseDelay = remainingDailyTarget > 0
+      ? periodMs
+      : remainingDayMs + periodMs
+    const delay = Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
     const nextSendTime = scheduleStartTime + delay
     setScheduledNextSendAt(nextSendTime)
 
