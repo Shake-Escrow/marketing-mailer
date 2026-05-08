@@ -6,7 +6,7 @@ import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, stripUnresolvedTokens } from './utils/template'
-import shakeLogo from './assets/shake-logo_horizontal_color.png'
+import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
