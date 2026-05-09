@@ -147,13 +147,21 @@ const getRandomSendJitterMs = (periodMs) => {
   return (Math.random() * 2 - 1) * jitterRangeMs
 }
 
+const shuffleArray = (items) => {
+  const shuffled = [...items]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
   const account = accounts[0]
   const sendLogRef = useRef(null)
   const eligibilityCache = useRef(new Map())
-  const autoLoadedRef = useRef(false)
   const autoSendInProgressRef = useRef(false)
   const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
@@ -303,16 +311,6 @@ export default function App() {
         : !sendSchedule
           ? 'Waiting for pacing estimate.'
           : ''
-
-  useEffect(() => {
-    if (autoLoadedRef.current) return
-    if (projectedNext24HourRecipientLoad == null) return
-    if (csvData || dbRecipientsLoading) return
-    if (!isAuthenticated || !account || !canRunApiFlow) return
-    if (mustUploadCsvRecipients) return
-    autoLoadedRef.current = true
-    handleLoadFromDb(projectedNext24HourRecipientLoad)
-  }, [projectedNext24HourRecipientLoad, csvData, dbRecipientsLoading, isAuthenticated, account, canRunApiFlow, mustUploadCsvRecipients])
 
   useEffect(() => {
     if (projectedNext24HourRecipientLoad == null) return
@@ -481,7 +479,7 @@ export default function App() {
         setError('No uncontacted emailable recipients found in the database.')
         return
       }
-      const recipients = contacts.map((c, index) => ({
+      const recipients = shuffleArray(contacts.map((c, index) => ({
         email:          (c.email || '').trim().toLowerCase(),
         name:           c.first_name || '',
         first_name:     c.first_name || '',
@@ -493,7 +491,7 @@ export default function App() {
         custom_field_3: c.custom_field_3 || '',
         custom_field_4: c.custom_field_4 || '',
         rowIndex:       index,
-      }))
+      })))
       eligibilityCache.current.clear()
       setPreviewEligibility(null)
       setCsvData({
