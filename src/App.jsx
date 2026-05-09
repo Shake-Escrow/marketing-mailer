@@ -31,11 +31,6 @@ const formatLocalTimestamp = (date = new Date()) => {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainderMinutes}`
 }
 
-const formatLocalDateKey = (date = new Date()) => {
-  const pad = (value) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
 const getResultIcon = (status) => {
   if (status === 'sent') return '✅'
   if (status === 'checked-only') return '�'
@@ -185,6 +180,8 @@ export default function App() {
   const sendLogRef = useRef(null)
   const eligibilityCache = useRef(new Map())
   const autoSendInProgressRef = useRef(false)
+  const autoDbLoadInProgressRef = useRef(false)
+  const autoDbLoadExhaustedRef = useRef(false)
   const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
@@ -205,9 +202,19 @@ export default function App() {
   const [sessionSentCount, setSessionSentCount] = useState(0)
   const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
 
+  const effectiveActivityBins = useMemo(() => {
+    if (!activityBins?.length) return activityBins
+    if (sessionSentCount <= 0) return activityBins
+    return activityBins.map((bin, index) => (
+      index === activityBins.length - 1
+        ? { ...bin, count: bin.count + sessionSentCount }
+        : bin
+    ))
+  }, [activityBins, sessionSentCount])
+
   const dayEstimate = useMemo(() => {
-    if (!activityBins || activityBins.length !== 7) return null
-    const counts = activityBins.map((b) => b.count)
+    if (!effectiveActivityBins || effectiveActivityBins.length !== 7) return null
+    const counts = effectiveActivityBins.map((b) => b.count)
     if (counts.every((c) => c === 0)) return null
     try {
       const completedDayCounts = counts.slice(0, -1)
@@ -221,7 +228,7 @@ export default function App() {
     } catch {
       return null
     }
-  }, [activityBins])
+  }, [effectiveActivityBins])
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
@@ -271,6 +278,7 @@ export default function App() {
   const canSendEmails =
     username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
+  const canAutoLoadRecipientsFromDb = canRunApiFlow && !mustUploadCsvRecipients
 
   useEffect(() => {
     if (!isAuthenticated || !account || !canRunApiFlow) return
@@ -322,14 +330,14 @@ export default function App() {
     }
   }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
-  const autoSendDisabledReason = !csvData?.recipients?.length
-    ? 'Load recipients to start auto-send.'
-    : !docxData
-      ? 'Upload a DOCX to start auto-send.'
-      : !subject.trim()
-        ? 'Enter a subject to start auto-send.'
-        : !sendSchedule
-          ? 'Waiting for pacing estimate.'
+  const autoSendDisabledReason = !docxData
+    ? 'Upload a DOCX to start auto-send.'
+    : !subject.trim()
+      ? 'Enter a subject to start auto-send.'
+      : !sendSchedule
+        ? 'Waiting for pacing estimate.'
+        : !csvData?.recipients?.length && !canAutoLoadRecipientsFromDb
+          ? 'Load recipients to start auto-send.'
           : ''
 
   useEffect(() => {
@@ -349,8 +357,8 @@ export default function App() {
       return
     }
     if (!csvData?.recipients?.length) {
-      setAutoSending(false)
       setScheduledNextSendAt(null)
+      if (!canAutoLoadRecipientsFromDb) setAutoSending(false)
       return
     }
 
@@ -397,7 +405,7 @@ export default function App() {
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt])
+  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt, canAutoLoadRecipientsFromDb])
 
   let parseDocxModulePromise
 
@@ -480,10 +488,10 @@ export default function App() {
   }
 
   const handleLoadFromDb = async (limitOverride) => {
-    if (!account) return
+    if (!account) return false
     if (mustUploadCsvRecipients) {
       setError('This account must upload recipients from a CSV file.')
-      return
+      return false
     }
     const hasLimitOverride = typeof limitOverride === 'number' || typeof limitOverride === 'string'
     const rawLimit = hasLimitOverride ? String(limitOverride) : dbLoadLimit
@@ -504,7 +512,7 @@ export default function App() {
       })
       if (!contacts.length) {
         setError('No uncontacted emailable recipients found in the database.')
-        return
+        return false
       }
       const recipients = shuffleArray(contacts.map((c, index) => ({
         email:          (c.email || '').trim().toLowerCase(),
@@ -533,12 +541,42 @@ export default function App() {
         dbTotal: total,
       })
       setSelectedRecipient(0)
+      return true
     } catch (e) {
       setError(`Failed to load recipients from database: ${e.message}`)
+      return false
     } finally {
       setDbRecipientsLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!autoSending) {
+      autoDbLoadExhaustedRef.current = false
+      return
+    }
+    if (csvData?.recipients?.length) {
+      autoDbLoadExhaustedRef.current = false
+      return
+    }
+    if (!canAutoLoadRecipientsFromDb || autoDbLoadInProgressRef.current || autoDbLoadExhaustedRef.current) return
+
+    let cancelled = false
+    autoDbLoadInProgressRef.current = true
+    handleLoadFromDb()
+      .then((loaded) => {
+        if (cancelled) return
+        if (!loaded) {
+          autoDbLoadExhaustedRef.current = true
+          setAutoSending(false)
+        }
+      })
+      .finally(() => {
+        autoDbLoadInProgressRef.current = false
+      })
+
+    return () => { cancelled = true }
+  }, [autoSending, csvData?.recipients?.length, canAutoLoadRecipientsFromDb])
 
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
@@ -619,15 +657,6 @@ export default function App() {
   const recordLocalEmailSend = (sendDate = new Date()) => {
     setActivityLastSendAt(sendDate.toISOString())
     setSessionSentCount((n) => n + 1)
-    setActivityBins((prev) => {
-      if (!prev?.length) return prev
-      const today = formatLocalDateKey(sendDate)
-      return prev.map((bin) => (
-        bin.day === today
-          ? { ...bin, count: bin.count + 1 }
-          : bin
-      ))
-    })
   }
 
   const sendNextRecipient = async () => {
@@ -924,13 +953,13 @@ export default function App() {
                 </p>
               )}
 
-              {activityBins && (() => {
-                const maxCount = Math.max(...activityBins.map((b) => b.count), 1)
+              {effectiveActivityBins && (() => {
+                const maxCount = Math.max(...effectiveActivityBins.map((b) => b.count), 1)
                 return (
                   <div className="activity-histogram">
                     <h3>Your sends — last 7 days</h3>
                     <div className="histogram-bars">
-                      {activityBins.map(({ day, count }) => {
+                      {effectiveActivityBins.map(({ day, count }) => {
                         const heightPct = count > 0 ? Math.max(Math.round((count / maxCount) * 100), 6) : 0
                         const label = new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })
                         return (
