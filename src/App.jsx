@@ -1035,7 +1035,7 @@ export default function App() {
               <ul>
                 <li>DOCX: first line can be <code>Subject: Your email subject</code></li>
                 <li>DOCX: or first H1 heading becomes the subject</li>
-                <li>Body supports variables like <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>, <code>{'{{customfield}}'}</code></li>
+                <li>Body supports variables like <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>, <code>{'{{custom_field_1}}'}</code></li>
                 <li>CSV requires <code>email</code> (or <code>mail</code> / <code>emailaddress</code>)</li>
                 <li>Optional columns: <code>name</code>, <code>company</code>, and any template variables</li>
               </ul>
