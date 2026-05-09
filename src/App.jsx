@@ -355,7 +355,9 @@ export default function App() {
     const baseDelay = remainingDailyTarget > 0
       ? periodMs
       : remainingDayMs + periodMs
-    const delay = Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
+    const delay = baseDelay < 1
+      ? 0
+      : Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
     const nextSendTime = scheduleStartTime + delay
     setScheduledNextSendAt(nextSendTime)
 
