@@ -147,6 +147,9 @@ const getRandomSendJitterMs = (periodMs) => {
   return (Math.random() * 2 - 1) * jitterRangeMs
 }
 
+// Scheduling requirements:
+// - Use the last successful send time when deciding whether the next send is already due.
+// - If today's quota is complete, schedule against tomorrow's campaign target.
 const getSendBaseDelayMs = ({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now }) => {
   if (remainingDailyTarget <= 0) return remainingDayMs + periodMs
   if (!Number.isFinite(lastSendTime)) return periodMs
@@ -156,6 +159,9 @@ const getSendBaseDelayMs = ({ remainingDailyTarget, remainingDayMs, periodMs, la
 
 const contactsActivityRequests = new Map()
 
+// Backend activity SQL requirement:
+// fetch the activity histogram/last-send snapshot once per page session/client.
+// Later sends update local state instead of re-querying this endpoint.
 const fetchContactsActivityOnce = (accessToken, clientId) => {
   const cacheKey = clientId || 'default'
   if (!contactsActivityRequests.has(cacheKey)) {
@@ -202,6 +208,8 @@ export default function App() {
   const [sessionSentCount, setSessionSentCount] = useState(0)
   const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
 
+  // Local activity overlay requirement: the backend snapshot is cached, so the
+  // current session's successful sends are layered onto the latest day bin.
   const effectiveActivityBins = useMemo(() => {
     if (!activityBins?.length) return activityBins
     if (sessionSentCount <= 0) return activityBins
@@ -274,6 +282,8 @@ export default function App() {
 
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
+  // Access requirements: most Shake users may use DB recipients; this specific
+  // account must provide a CSV; .onmicrosoft.com accounts run API checks only.
   const mustUploadCsvRecipients = username.startsWith('jmusila@')
   const canSendEmails =
     username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
@@ -301,6 +311,8 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
+  // Display requirement: "Sent today" and pacing use the cached backend
+  // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
     if (!dayEstimate || dayEstimate.target <= 0) return null
     const dayEndTime = getNextLocalMidnightTime(now)
@@ -330,6 +342,8 @@ export default function App() {
     }
   }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
+  // Start requirement: DB-capable users may start auto-send with an empty queue;
+  // the queue-refill effect below will load recipients on demand.
   const autoSendDisabledReason = !docxData
     ? 'Upload a DOCX to start auto-send.'
     : !subject.trim()
@@ -388,6 +402,7 @@ export default function App() {
       lastSendTime,
       now: scheduleStartTime,
     })
+    // If the computed wait is already due, send now and do not apply jitter.
     const delay = baseDelay < 1
       ? 0
       : Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
@@ -550,6 +565,9 @@ export default function App() {
     }
   }
 
+  // Auto-send queue requirement: when auto-send is active and the queue is
+  // empty, refill from the DB automatically. Stop if the DB is exhausted or
+  // unavailable so the app does not retry forever.
   useEffect(() => {
     if (!autoSending) {
       autoDbLoadExhaustedRef.current = false
@@ -654,6 +672,8 @@ export default function App() {
     })
   }
 
+  // Cached activity requirement: only successful email sends update Last send,
+  // Sent this session, Sent today, and downstream pacing calculations.
   const recordLocalEmailSend = (sendDate = new Date()) => {
     setActivityLastSendAt(sendDate.toISOString())
     setSessionSentCount((n) => n + 1)
