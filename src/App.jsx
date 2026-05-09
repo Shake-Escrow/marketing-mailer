@@ -31,6 +31,11 @@ const formatLocalTimestamp = (date = new Date()) => {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainderMinutes}`
 }
 
+const formatLocalDateKey = (date = new Date()) => {
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 const getResultIcon = (status) => {
   if (status === 'sent') return '✅'
   if (status === 'checked-only') return '�'
@@ -147,6 +152,23 @@ const getRandomSendJitterMs = (periodMs) => {
   return (Math.random() * 2 - 1) * jitterRangeMs
 }
 
+const getSendBaseDelayMs = ({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now }) => {
+  if (remainingDailyTarget <= 0) return remainingDayMs + periodMs
+  if (!Number.isFinite(lastSendTime)) return periodMs
+  const elapsedSinceLastSendMs = Math.max(now - lastSendTime, 0)
+  return Math.max(0, periodMs - elapsedSinceLastSendMs)
+}
+
+const contactsActivityRequests = new Map()
+
+const fetchContactsActivityOnce = (accessToken, clientId) => {
+  const cacheKey = clientId || 'default'
+  if (!contactsActivityRequests.has(cacheKey)) {
+    contactsActivityRequests.set(cacheKey, fetchContactsActivity(accessToken, { clientId }))
+  }
+  return contactsActivityRequests.get(cacheKey)
+}
+
 const shuffleArray = (items) => {
   const shuffled = [...items]
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
@@ -206,7 +228,7 @@ export default function App() {
   const [dbLoadLimit, setDbLoadLimit] = useState(String(MAX_DB_RECIPIENT_LOAD))
 
   const sentTodayWithSession = dayEstimate
-    ? dayEstimate.sentToday + sessionSentCount
+    ? dayEstimate.sentToday
     : sessionSentCount
   const remainingDailyTarget = dayEstimate
     ? Math.max(dayEstimate.target - sentTodayWithSession, 0)
@@ -253,14 +275,15 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !account || !canRunApiFlow) return
     let cancelled = false
+    const clientId = account.username
     getAccessToken(instance, account, loginRequest)
-      .then((token) => fetchContactsActivity(token, { clientId: account.username }))
+      .then((token) => fetchContactsActivityOnce(token, clientId))
       .then(({ bins, last_send_at }) => {
-      if (!cancelled) {
-        setActivityBins(bins)
-        setActivityLastSendAt(last_send_at)
-      }
-    })
+        if (!cancelled) {
+          setActivityBins(bins)
+          setActivityLastSendAt(last_send_at)
+        }
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [isAuthenticated, account, canRunApiFlow])
@@ -282,11 +305,8 @@ export default function App() {
       ? remainingDayMs / activeDailyTarget
       : DAY_MS / activeDailyTarget
     const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
-    const nextSendTime = scheduledNextSendAt ?? (
-      remainingDailyTarget > 0
-        ? now + periodMs
-        : dayEndTime + periodMs
-    )
+    const baseDelay = getSendBaseDelayMs({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now })
+    const nextSendTime = scheduledNextSendAt ?? now + baseDelay
     const timeUntilNextMs = nextSendTime - now
     return {
       periodMs,
@@ -352,9 +372,14 @@ export default function App() {
     const periodMs = remainingDailyTarget > 0
       ? remainingDayMs / activeDailyTarget
       : DAY_MS / activeDailyTarget
-    const baseDelay = remainingDailyTarget > 0
-      ? periodMs
-      : remainingDayMs + periodMs
+    const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
+    const baseDelay = getSendBaseDelayMs({
+      remainingDailyTarget,
+      remainingDayMs,
+      periodMs,
+      lastSendTime,
+      now: scheduleStartTime,
+    })
     const delay = baseDelay < 1
       ? 0
       : Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
@@ -372,7 +397,7 @@ export default function App() {
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length])
+  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt])
 
   let parseDocxModulePromise
 
@@ -591,6 +616,20 @@ export default function App() {
     })
   }
 
+  const recordLocalEmailSend = (sendDate = new Date()) => {
+    setActivityLastSendAt(sendDate.toISOString())
+    setSessionSentCount((n) => n + 1)
+    setActivityBins((prev) => {
+      if (!prev?.length) return prev
+      const today = formatLocalDateKey(sendDate)
+      return prev.map((bin) => (
+        bin.day === today
+          ? { ...bin, count: bin.count + 1 }
+          : bin
+      ))
+    })
+  }
+
   const sendNextRecipient = async () => {
     if (!account || !csvData?.recipients?.length || !docxData) return
 
@@ -607,7 +646,6 @@ export default function App() {
       if (marketingContactResult.contacted) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-contacted' }])
         advanceQueue()
-        setActivityLastSendAt(new Date().toISOString())
         return
       }
 
@@ -618,14 +656,12 @@ export default function App() {
       if (!contactEligibility.emailable) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-not-emailable', reason: contactEligibility.reason, rationale: contactEligibility.rationale }])
         advanceQueue()
-        setActivityLastSendAt(new Date().toISOString())
         return
       }
 
       if (!canSendEmails) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'checked-only', rationale: contactEligibility.rationale }])
         advanceQueue()
-        setActivityLastSendAt(new Date().toISOString())
         return
       }
 
@@ -642,13 +678,11 @@ export default function App() {
       })
 
       setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'sent', rationale: contactEligibility.rationale }])
-      setSessionSentCount((n) => n + 1)
+      recordLocalEmailSend()
       advanceQueue()
-      setActivityLastSendAt(new Date().toISOString())
     } catch (e) {
       setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'failed', error: e.message }])
       advanceQueue()
-      setActivityLastSendAt(new Date().toISOString())
     }
   }
 
@@ -793,6 +827,7 @@ export default function App() {
           }
 
           previousSuccessfulEmail = normalizedEmail
+          recordLocalEmailSend()
           setSendResults((prev) => [
             ...prev,
             {
