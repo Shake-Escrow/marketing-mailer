@@ -276,7 +276,14 @@ export default function App() {
   const dayEstimate = useMemo(() => {
     if (!effectiveActivityBins || effectiveActivityBins.length !== 7) return null
     const counts = effectiveActivityBins.map((b) => b.count)
-    if (counts.every((c) => c === 0)) return null
+    if (counts.every((c) => c === 0)) {
+      const currentDay = 1
+      return {
+        currentDay,
+        target: getDailyTargetForCampaignDay(currentDay),
+        sentToday: 0,
+      }
+    }
     try {
       const completedDayCounts = counts.slice(0, -1)
       const shouldIgnorePartialToday = completedDayCounts.some((count) => count > 0)
@@ -339,7 +346,7 @@ export default function App() {
   // account must provide a CSV; .onmicrosoft.com accounts run API checks only.
   const mustUploadCsvRecipients = username.startsWith('jmusila@')
   const canSendEmails =
-    username.endsWith('@shakedefi.email') || username.endsWith('.shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
+    username.endsWith('shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
   const canAutoLoadRecipientsFromDb = canRunApiFlow && !mustUploadCsvRecipients
 
