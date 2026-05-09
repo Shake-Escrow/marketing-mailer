@@ -184,6 +184,15 @@ const formatSqlBinDayLabel = (day) => {
   return `${Number(match[1])}/${Number(match[2])}`
 }
 
+const formatDiagnosticTime = (timestamp) => {
+  if (!Number.isFinite(timestamp)) return null
+  const date = new Date(timestamp)
+  return {
+    iso: date.toISOString(),
+    local: date.toLocaleString(),
+  }
+}
+
 const getRandomSendJitterMs = (periodMs) => {
   const jitterRangeMs = periodMs * 0.2
   return (Math.random() * 2 - 1) * jitterRangeMs
@@ -231,6 +240,7 @@ export default function App() {
   const autoDbLoadInProgressRef = useRef(false)
   const autoDbLoadExhaustedRef = useRef(false)
   const activityRefreshInProgressRef = useRef(false)
+  const lastScheduleDiagnosticKeyRef = useRef('')
   const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
@@ -430,6 +440,90 @@ export default function App() {
         : !csvData?.recipients?.length && !canAutoLoadRecipientsFromDb
           ? 'Load recipients to start auto-send.'
           : ''
+
+  useEffect(() => {
+    if (!effectiveActivityBins?.length) return
+
+    const currentBin = effectiveActivityBins[effectiveActivityBins.length - 1]
+    const binStartTime = getSqlBinStartTime(currentBin)
+    const binEndTime = getSqlBinEndTime(currentBin)
+    const roundedNextSendMinute = sendSchedule?.nextSendTime
+      ? Math.floor(sendSchedule.nextSendTime / 60000)
+      : 'none'
+    const diagnosticKey = [
+      currentBin?.day || 'unknown-day',
+      currentBin?.count ?? 'unknown-count',
+      dayEstimate?.target ?? 'no-target',
+      sentTodayWithSession,
+      remainingDailyTarget,
+      roundedNextSendMinute,
+      autoSending ? 'auto-on' : 'auto-off',
+      csvData?.recipients?.length ?? 0,
+    ].join('|')
+
+    if (lastScheduleDiagnosticKeyRef.current === diagnosticKey) return
+    lastScheduleDiagnosticKeyRef.current = diagnosticKey
+
+    const waitReason = !sendSchedule
+      ? (autoSendDisabledReason || 'No send schedule is currently available.')
+      : remainingDailyTarget <= 0
+        ? 'Today’s SQL bin target is complete; waiting for the next SQL bin plus pacing interval.'
+        : sendSchedule.timeUntilNextMs <= 0
+          ? 'A send is due now.'
+          : 'Waiting for the next paced send time.'
+
+    console.groupCollapsed('[Shake Marketing] activity bin / scheduler diagnostic')
+    console.log({
+      reason: waitReason,
+      now: formatDiagnosticTime(Date.now()),
+      autoSending,
+      recipientsQueued: csvData?.recipients?.length ?? 0,
+      currentSqlBin: {
+        day: currentBin?.day,
+        count: currentBin?.count,
+        bin_start_at: currentBin?.bin_start_at,
+        bin_end_at: currentBin?.bin_end_at,
+        parsedStart: formatDiagnosticTime(binStartTime),
+        parsedEnd: formatDiagnosticTime(binEndTime),
+      },
+      campaign: dayEstimate
+        ? {
+            estimatedDay: dayEstimate.currentDay,
+            target: dayEstimate.target,
+            sentToday: sentTodayWithSession,
+            remainingToday: remainingDailyTarget,
+            projectedNext24h: projectedNext24HourRecipientLoad,
+          }
+        : null,
+      schedule: sendSchedule
+        ? {
+            sendEvery: formatDuration(sendSchedule.periodMs),
+            lastSend: formatDiagnosticTime(sendSchedule.lastSendTime),
+            nextSend: formatDiagnosticTime(sendSchedule.nextSendTime),
+            timeUntilNext: formatDuration(sendSchedule.timeUntilNextMs),
+            startsTomorrow: sendSchedule.startsTomorrow,
+            targetCampaignDay: sendSchedule.targetCampaignDay,
+          }
+        : null,
+    })
+    console.table(effectiveActivityBins.map((bin) => ({
+      day: bin.day,
+      count: bin.count,
+      bin_start_at: bin.bin_start_at || '',
+      bin_end_at: bin.bin_end_at || '',
+    })))
+    console.groupEnd()
+  }, [
+    effectiveActivityBins,
+    sendSchedule,
+    autoSending,
+    autoSendDisabledReason,
+    csvData?.recipients?.length,
+    dayEstimate,
+    sentTodayWithSession,
+    remainingDailyTarget,
+    projectedNext24HourRecipientLoad,
+  ])
 
   useEffect(() => {
     if (projectedNext24HourRecipientLoad == null) return
