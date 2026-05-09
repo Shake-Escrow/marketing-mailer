@@ -142,6 +142,48 @@ const getNextLocalMidnightTime = (timestamp) => {
   return date.getTime()
 }
 
+const parseSqlBinTimestamp = (value) => {
+  if (!value) return null
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : null
+}
+
+const parseSqlBinDayStartTime = (day) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''))
+  if (!match) return null
+  const [, year, month, dayOfMonth] = match
+  return Date.UTC(Number(year), Number(month) - 1, Number(dayOfMonth))
+}
+
+const getSqlBinStartTime = (bin) => (
+  parseSqlBinTimestamp(bin?.bin_start_at) ?? parseSqlBinDayStartTime(bin?.day)
+)
+
+const getSqlBinEndTime = (bin) => {
+  const explicitEndTime = parseSqlBinTimestamp(bin?.bin_end_at)
+  if (explicitEndTime !== null) return explicitEndTime
+
+  const startTime = getSqlBinStartTime(bin)
+  return startTime === null ? null : startTime + DAY_MS
+}
+
+const getCurrentSqlBinEndTime = (bins) => {
+  if (!bins?.length) return null
+  return getSqlBinEndTime(bins[bins.length - 1])
+}
+
+const getActivityDayEndTime = (bins, timestamp) => {
+  const sqlBinEndTime = getCurrentSqlBinEndTime(bins)
+  if (sqlBinEndTime !== null) return sqlBinEndTime
+  return getNextLocalMidnightTime(timestamp)
+}
+
+const formatSqlBinDayLabel = (day) => {
+  const match = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(day || ''))
+  if (!match) return String(day || '')
+  return `${Number(match[1])}/${Number(match[2])}`
+}
+
 const getRandomSendJitterMs = (periodMs) => {
   const jitterRangeMs = periodMs * 0.2
   return (Math.random() * 2 - 1) * jitterRangeMs
@@ -159,12 +201,12 @@ const getSendBaseDelayMs = ({ remainingDailyTarget, remainingDayMs, periodMs, la
 
 const contactsActivityRequests = new Map()
 
-// Backend activity SQL requirement:
-// fetch the activity histogram/last-send snapshot once per page session/client.
-// Later sends update local state instead of re-querying this endpoint.
-const fetchContactsActivityOnce = (accessToken, clientId) => {
+// Backend activity SQL requirement: cache the activity snapshot per client, but
+// force a refresh when the current SQL bin rolls over. Later sends update local
+// state until the next backend snapshot replaces it.
+const fetchContactsActivityOnce = (accessToken, clientId, options = {}) => {
   const cacheKey = clientId || 'default'
-  if (!contactsActivityRequests.has(cacheKey)) {
+  if (options.force || !contactsActivityRequests.has(cacheKey)) {
     contactsActivityRequests.set(cacheKey, fetchContactsActivity(accessToken, { clientId }))
   }
   return contactsActivityRequests.get(cacheKey)
@@ -188,6 +230,7 @@ export default function App() {
   const autoSendInProgressRef = useRef(false)
   const autoDbLoadInProgressRef = useRef(false)
   const autoDbLoadExhaustedRef = useRef(false)
+  const activityRefreshInProgressRef = useRef(false)
   const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
 
@@ -251,7 +294,7 @@ export default function App() {
   const projectedNext24HourRecipientLoad = useMemo(() => {
     if (!dayEstimate) return null
 
-    const dayEndTime = getNextLocalMidnightTime(now)
+    const dayEndTime = getActivityDayEndTime(effectiveActivityBins, now)
     const remainingCurrentDayMs = Math.max(dayEndTime - now, 0)
     const nextDayWindowMs = Math.max(DAY_MS - remainingCurrentDayMs, 0)
     const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
@@ -259,7 +302,7 @@ export default function App() {
     const projectedSendCount = remainingDailyTarget + projectedNextDaySends
 
     return Math.min(Math.max(projectedSendCount, 1), MAX_DB_RECIPIENT_LOAD)
-  }, [dayEstimate, now, remainingDailyTarget])
+  }, [dayEstimate, effectiveActivityBins, now, remainingDailyTarget])
 
   // Fetch runtime config from MessageHub once the user is authenticated.
   // The key travels over an authenticated channel and is never embedded in
@@ -278,7 +321,7 @@ export default function App() {
         // Non-fatal — AI features simply won't be available
       })
     return () => { cancelled = true }
-  }, [isAuthenticated, account])
+  }, [isAuthenticated, account, instance])
 
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
@@ -304,7 +347,41 @@ export default function App() {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [isAuthenticated, account, canRunApiFlow])
+  }, [isAuthenticated, account, instance, canRunApiFlow])
+
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canRunApiFlow || !activityBins?.length) return
+
+    const binEndTime = getCurrentSqlBinEndTime(activityBins)
+    if (binEndTime === null) return
+
+    let cancelled = false
+    const clientId = account.username
+    const refreshDelay = Math.max(binEndTime - Date.now() + 1000, 1000)
+    const timer = setTimeout(() => {
+      if (activityRefreshInProgressRef.current) return
+
+      activityRefreshInProgressRef.current = true
+      getAccessToken(instance, account, loginRequest)
+        .then((token) => fetchContactsActivityOnce(token, clientId, { force: true }))
+        .then(({ bins, last_send_at }) => {
+          if (cancelled) return
+          setActivityBins(bins)
+          setActivityLastSendAt(last_send_at)
+          setSessionSentCount(0)
+          setScheduledNextSendAt(null)
+        })
+        .catch(() => {})
+        .finally(() => {
+          activityRefreshInProgressRef.current = false
+        })
+    }, refreshDelay)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [isAuthenticated, account, instance, canRunApiFlow, activityBins])
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 10000)
@@ -315,7 +392,7 @@ export default function App() {
   // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
     if (!dayEstimate || dayEstimate.target <= 0) return null
-    const dayEndTime = getNextLocalMidnightTime(now)
+    const dayEndTime = getActivityDayEndTime(effectiveActivityBins, now)
     const remainingDayMs = Math.max(dayEndTime - now, 0)
     if (remainingDayMs <= 0) return null
     const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
@@ -340,7 +417,7 @@ export default function App() {
       startsTomorrow: remainingDailyTarget <= 0,
       targetCampaignDay: remainingDailyTarget > 0 ? dayEstimate.currentDay : dayEstimate.currentDay + 1,
     }
-  }, [dayEstimate, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
+  }, [dayEstimate, effectiveActivityBins, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
   // Start requirement: DB-capable users may start auto-send with an empty queue;
   // the queue-refill effect below will load recipients on demand.
@@ -377,7 +454,7 @@ export default function App() {
     }
 
     const scheduleStartTime = Date.now()
-    const dayEndTime = getNextLocalMidnightTime(scheduleStartTime)
+    const dayEndTime = getActivityDayEndTime(effectiveActivityBins, scheduleStartTime)
     const remainingDayMs = Math.max(dayEndTime - scheduleStartTime, 0)
     if (remainingDayMs <= 0) {
       setAutoSending(false)
@@ -420,7 +497,7 @@ export default function App() {
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [autoSending, dayEstimate, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt, canAutoLoadRecipientsFromDb])
+  }, [autoSending, dayEstimate, effectiveActivityBins, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt, canAutoLoadRecipientsFromDb])
 
   let parseDocxModulePromise
 
@@ -981,7 +1058,7 @@ export default function App() {
                     <div className="histogram-bars">
                       {effectiveActivityBins.map(({ day, count }) => {
                         const heightPct = count > 0 ? Math.max(Math.round((count / maxCount) * 100), 6) : 0
-                        const label = new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })
+                        const label = formatSqlBinDayLabel(day)
                         return (
                           <div key={day} className="histogram-col">
                             <span className="histogram-count">{count > 0 ? count : ''}</span>

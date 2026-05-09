@@ -331,10 +331,11 @@ export async function getMe(accessToken) {
 
 /**
  * Fetches a 7-day histogram of contacts last_contacted by the authenticated user.
- * Returns bins: [{ day: "YYYY-MM-DD", count: N }, ...] ordered oldest to newest.
+ * Returns bins ordered oldest to newest. bin_start_at/bin_end_at are the
+ * Postgres generate_series boundaries and should be treated as source-of-truth.
  * @param {string} accessToken
  * @param {{ clientId?: string }} [options]
- * @returns {{ bins: { day: string, count: number }[] }}
+ * @returns {{ bins: { day: string, bin_start_at?: string, bin_end_at?: string, count: number }[] }}
  */
 export async function fetchContactsActivity(accessToken, options = {}) {
   const apiBaseUrl = getMarketingContactsBaseUrl()
