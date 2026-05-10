@@ -5,7 +5,8 @@
  * @param {number[]} emails - Array of observed email counts
  * @param {number} a - Quadratic coefficient (default 0.246)
  * @param {number} c - Constant term (default 1.75)
- * @param {number} currentDayOffset - Offset from the first observed day to the current day
+ * @param {number} currentDayOffset - Offset from the first observed day to the day being estimated.
+ *   Use emails.length when emails excludes today's in-progress bin.
  * @returns {{ startDay: number, currentDay: number, sse: number }}
  */
 export function findCurrentDay(emails, a = 0.246, c = 1.75, currentDayOffset = emails.length - 1) {

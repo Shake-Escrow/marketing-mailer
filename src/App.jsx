@@ -276,22 +276,29 @@ export default function App() {
   const dayEstimate = useMemo(() => {
     if (!effectiveActivityBins || effectiveActivityBins.length !== 7) return null
     const counts = effectiveActivityBins.map((b) => b.count)
-    if (counts.every((c) => c === 0)) {
+    const completedDayCounts = counts.slice(0, -1)
+    const sentToday = counts[counts.length - 1] || 0
+
+    // The backend histogram includes six completed daily bins followed by the
+    // current in-progress SQL day. Fit only the completed days, then advance
+    // the returned day index by one bin so it represents today.
+    if (!completedDayCounts.some((count) => count > 0)) {
       const currentDay = 1
       return {
         currentDay,
         target: getDailyTargetForCampaignDay(currentDay),
-        sentToday: 0,
+        sentToday,
       }
     }
     try {
-      const completedDayCounts = counts.slice(0, -1)
-      const shouldIgnorePartialToday = completedDayCounts.some((count) => count > 0)
-      const { currentDay } = shouldIgnorePartialToday
-        ? findCurrentDay(completedDayCounts, CAMPAIGN_CURVE_A, CAMPAIGN_CURVE_C, counts.length - 1)
-        : findCurrentDay(counts, CAMPAIGN_CURVE_A, CAMPAIGN_CURVE_C)
+      const todayOffsetFromFirstCompletedBin = completedDayCounts.length
+      const { currentDay } = findCurrentDay(
+        completedDayCounts,
+        CAMPAIGN_CURVE_A,
+        CAMPAIGN_CURVE_C,
+        todayOffsetFromFirstCompletedBin,
+      )
       const target = getDailyTargetForCampaignDay(currentDay)
-      const sentToday = counts[counts.length - 1] || 0
       return { currentDay, target, sentToday }
     } catch {
       return null
