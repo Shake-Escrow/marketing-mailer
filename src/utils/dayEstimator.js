@@ -14,6 +14,16 @@ export function findCurrentDay(emails, a = 0.246, c = 1.75, currentDayOffset = e
     throw new Error("Expected at least one day of data");
   }
 
+  const firstSendDayIndex = emails.findIndex((count) => count > 0);
+  if (firstSendDayIndex >= 2) {
+    const startDay = 1 - firstSendDayIndex;
+    return {
+      startDay,
+      currentDay: startDay + currentDayOffset,
+      sse: 0,
+    };
+  }
+
   function sse(d) {
     return emails.reduce((sum, y, i) => {
       const predicted = a * (d + i) ** 2 + c;
