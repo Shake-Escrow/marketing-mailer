@@ -349,9 +349,11 @@ export default function App() {
 
   const username = (account?.username || '').toLowerCase()
   const isShakeDefiDotComUser = username.endsWith('@shakedefi.com')
-  // Access requirements: most Shake users may use DB recipients; this specific
-  // account must provide a CSV; .onmicrosoft.com accounts run API checks only.
-  const mustUploadCsvRecipients = username.startsWith('jmusila@')
+  // Access requirements: most Shake users may use DB recipients. The jmusila
+  // account may load its scoped DB recipients, but manual bulk sends are
+  // disabled so outbound mail only follows the paced sendSchedule auto-send.
+  const isJmusilaScheduledOnlyUser = username.startsWith('jmusila@')
+  const mustUploadCsvRecipients = false
   const canSendEmails =
     username.endsWith('shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
@@ -689,10 +691,6 @@ export default function App() {
 
   const handleLoadFromDb = async (limitOverride) => {
     if (!account) return false
-    if (mustUploadCsvRecipients) {
-      setError('This account must upload recipients from a CSV file.')
-      return false
-    }
     const hasLimitOverride = typeof limitOverride === 'number' || typeof limitOverride === 'string'
     const rawLimit = hasLimitOverride ? String(limitOverride) : dbLoadLimit
     const requestedLimit = Math.min(
@@ -925,6 +923,11 @@ export default function App() {
 
     if (!canRunApiFlow) {
       setError('Please sign in with a @shakedefi, @shake-defi.com, or .onmicrosoft.com Microsoft account.')
+      return
+    }
+
+    if (isJmusilaScheduledOnlyUser) {
+      setError('This account may only send emails using the paced sendSchedule. Use Start Auto-Send instead of Send All Emails.')
       return
     }
 
@@ -1350,10 +1353,10 @@ export default function App() {
 
             <button
               className="send-btn"
-              disabled={sending || autoSending || !canRunApiFlow || !docxData || !csvData?.recipients?.length || !subject.trim()}
+              disabled={sending || autoSending || isJmusilaScheduledOnlyUser || !canRunApiFlow || !docxData || !csvData?.recipients?.length || !subject.trim()}
               onClick={handleSendAll}
             >
-              {sending ? 'Sending…' : 'Send All Emails'}
+              {sending ? 'Sending…' : isJmusilaScheduledOnlyUser ? 'Use Start Auto-Send' : 'Send All Emails'}
             </button>
 
             {error && <p className="error-text">{error}</p>}
