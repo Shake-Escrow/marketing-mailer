@@ -10,7 +10,9 @@ import { findCurrentDay } from './utils/dayEstimator'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
 
-const EMAIL_SIGNATURE_HTML = `<div style="margin-top:24px;text-align:center;"><img src="${shakeLogoDataUri}" alt="Shake Defi" style="max-width:192px;width:100%;height:auto;"></div><div style="margin-top:24px;text-align:center;font-size:0.78rem;opacity:0.55;"><p style="margin:4px 0;">Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p><p style="margin:4px 0;"><a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p></div>`
+const SHAKE_SITE_URL = 'https://shakedefi.com'
+
+const EMAIL_SIGNATURE_HTML = `<div style="margin-top:24px;text-align:center;"><a href="${SHAKE_SITE_URL}" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;border:0;"><img src="${shakeLogoDataUri}" alt="Shake Defi" border="0" style="display:block;max-width:192px;width:100%;height:auto;border:0;outline:none;text-decoration:none;"></a></div><div style="margin-top:24px;text-align:center;font-size:0.78rem;opacity:0.55;"><p style="margin:4px 0;">Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p><p style="margin:4px 0;"><a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p></div>`
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -1339,7 +1341,7 @@ export default function App() {
                   </p>
                   <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
                   <div className="email-logo-wrap">
-                    <a href="https://shakedefi.com" target="_blank" rel="noopener noreferrer">
+                    <a href={SHAKE_SITE_URL} target="_blank" rel="noopener noreferrer">
                       <img src={shakeLogo} alt="Shake Defi" className="email-logo" />
                     </a>
                   </div>
