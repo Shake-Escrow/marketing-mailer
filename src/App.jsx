@@ -877,7 +877,7 @@ export default function App() {
         clientId: account.username,
       })
 
-      if (marketingContactResult.contacted) {
+      if (marketingContactResult.contacted && !isJmusilaScheduledOnlyUser) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-contacted' }])
         advanceQueue()
         return
