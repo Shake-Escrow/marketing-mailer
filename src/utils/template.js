@@ -11,6 +11,62 @@ const TEMPLATE_KEY_ALIASES = {
   template_sell_description: 'sell luxury vehicles, specialty cars, fleet inventory, or private sales',
 }
 
+export const TEMPLATE_DEFAULTS = {
+  name: 'Auto Dealer',
+  vehicle: 'vehicle',
+  dealerships: 'dealerships',
+  'your dealership': 'your dealership',
+  'sell luxury vehicles, specialty cars, fleet inventory, or private sales':
+    'sell luxury vehicles, specialty cars, fleet inventory, or private sales',
+  'auto dealers': 'Auto Dealers',
+}
+
+const CONTACT_TEMPLATE_FIELD_MAP = [
+  ['first_name', 'name'],
+  ['custom_field_1', 'vehicle'],
+  ['custom_field_2', 'dealerships'],
+  ['custom_field_3', 'your dealership'],
+  ['custom_field_4', 'sell luxury vehicles, specialty cars, fleet inventory, or private sales'],
+  ['industry', 'auto dealers'],
+]
+
+const hasValue = (value) => (
+  value !== undefined && value !== null && String(value).trim() !== ''
+)
+
+const normalizeVariableObject = (source = {}) => {
+  if (!source || typeof source !== 'object') return {}
+
+  const normalized = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (!hasValue(value)) continue
+
+    normalized[key] = value
+    const normalizedKey = key.trim().toLowerCase()
+    const resolvedKey = TEMPLATE_KEY_ALIASES[normalizedKey]
+    if (resolvedKey) normalized[resolvedKey] = value
+  }
+
+  return normalized
+}
+
+export function buildTemplateVariables(recipient = {}, backendTemplateVariables = {}) {
+  const contactTemplateVariables = {}
+  const normalizedRecipient = normalizeVariableObject(recipient)
+
+  for (const [contactKey, templateKey] of CONTACT_TEMPLATE_FIELD_MAP) {
+    const value = normalizedRecipient[contactKey]
+    if (hasValue(value)) contactTemplateVariables[templateKey] = value
+  }
+
+  return {
+    ...TEMPLATE_DEFAULTS,
+    ...normalizeVariableObject(backendTemplateVariables),
+    ...normalizedRecipient,
+    ...contactTemplateVariables,
+  }
+}
+
 export function applyTemplate(template, variables = {}) {
   return template.replace(/\{\{(\s*[\w.,\- ]+\s*)\}\}/g, (match, key) => {
     const normalizedKey = key.trim().toLowerCase()

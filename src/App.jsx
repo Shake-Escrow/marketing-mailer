@@ -5,7 +5,7 @@ import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
-import { applyTemplate, stripUnresolvedTokens } from './utils/template'
+import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
 import { findCurrentDay } from './utils/dayEstimator'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
@@ -657,6 +657,17 @@ export default function App() {
     }
   }
 
+  const getTemplateVariablesForRecipient = (recipient = {}, backendTemplateVariables = {}) => {
+    const resolvedRecipient = withDefaultName(
+      recipient,
+      backendTemplateVariables?.name
+    )
+    return {
+      resolvedRecipient,
+      templateVariables: buildTemplateVariables(resolvedRecipient, backendTemplateVariables),
+    }
+  }
+
   const handleDocxUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -784,28 +795,20 @@ export default function App() {
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
-    const resolvedRecipient = withDefaultName(
+    const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables?.name
+      previewEligibility?.template_variables || {}
     )
-    const variables = {
-      ...(previewEligibility?.template_variables || {}),
-      ...resolvedRecipient,
-    }
-    return applyTemplate(docxData.html, variables)
+    return applyTemplate(docxData.html, templateVariables)
   }, [docxData, previewRecipient, previewEligibility, defaultName])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
-    const resolvedRecipient = withDefaultName(
+    const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables?.name
+      previewEligibility?.template_variables || {}
     )
-    const variables = {
-      ...(previewEligibility?.template_variables || {}),
-      ...resolvedRecipient,
-    }
-    return applyTemplate(subject, variables)
+    return applyTemplate(subject, templateVariables)
   }, [subject, previewRecipient, previewEligibility, defaultName])
 
   useEffect(() => {
@@ -899,8 +902,10 @@ export default function App() {
         return
       }
 
-      const resolvedRecipient = withDefaultName(recipient, contactEligibility.template_variables?.name)
-      const templateVariables = { ...(contactEligibility.template_variables || {}), ...resolvedRecipient }
+      const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
+        recipient,
+        contactEligibility.template_variables || {}
+      )
       const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
       const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
@@ -1041,14 +1046,10 @@ export default function App() {
             continue
           }
 
-          const resolvedRecipient = withDefaultName(
+          const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
             recipient,
-            contactEligibility.template_variables?.name
+            contactEligibility.template_variables || {}
           )
-          const templateVariables = {
-            ...(contactEligibility.template_variables || {}),
-            ...resolvedRecipient,
-          }
           const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
