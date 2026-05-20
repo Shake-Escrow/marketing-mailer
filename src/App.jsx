@@ -961,6 +961,7 @@ export default function App() {
       const updatedHeaders = [...csvData.headers]
       const shouldUpdateCsvRows = canSendEmails && !csvData.fromDatabase
       const processedEmails = new Set()
+      const remainingRecipients = []
       let previousSuccessfulEmail = null
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
 
@@ -1076,6 +1077,7 @@ export default function App() {
           ])
         } catch (e) {
           previousSuccessfulEmail = null
+          remainingRecipients.push(recipient)
           setSendResults((prev) => [
             ...prev,
             {
@@ -1100,17 +1102,24 @@ export default function App() {
       if (shouldUpdateCsvRows) {
         const csvOutput = serializeCsv(updatedHeaders, updatedRows)
         setUpdatedCsvContent(csvOutput)
-        setCsvData((prev) =>
-          prev
-            ? {
-                ...prev,
-                rows: updatedRows,
-                headers: updatedHeaders,
-                lastContactedKey,
-              }
-            : prev
-        )
       }
+
+      setCsvData((prev) =>
+        prev
+          ? {
+              ...prev,
+              recipients: remainingRecipients,
+              ...(shouldUpdateCsvRows
+                ? {
+                    rows: updatedRows,
+                    headers: updatedHeaders,
+                    lastContactedKey,
+                  }
+                : {}),
+            }
+          : prev
+      )
+      setSelectedRecipient(0)
     } catch (e) {
       setError(`Unable to process recipients: ${e.message}`)
     } finally {
