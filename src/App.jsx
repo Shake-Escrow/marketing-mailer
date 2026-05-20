@@ -886,9 +886,9 @@ export default function App() {
         return
       }
 
-      const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
-      const contactEligibility = cachedEligibility ?? await checkMarketingContact(graphToken, normalizedEmail, { clientId: account.username })
-      if (!cachedEligibility) eligibilityCache.current.set(normalizedEmail, contactEligibility)
+      eligibilityCache.current.delete(normalizedEmail)
+      const contactEligibility = await checkMarketingContact(graphToken, normalizedEmail, { clientId: account.username })
+      eligibilityCache.current.set(normalizedEmail, contactEligibility)
 
       if (!contactEligibility.emailable) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-not-emailable', reason: contactEligibility.reason, rationale: contactEligibility.rationale }])
@@ -1009,15 +1009,13 @@ export default function App() {
             continue
           }
 
-          const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
-          const contactEligibility = cachedEligibility ?? await checkMarketingContact(
+          eligibilityCache.current.delete(normalizedEmail)
+          const contactEligibility = await checkMarketingContact(
             marketingContactsToken,
             normalizedEmail,
             { clientId: account.username }
           )
-          if (!cachedEligibility) {
-            eligibilityCache.current.set(normalizedEmail, contactEligibility)
-          }
+          eligibilityCache.current.set(normalizedEmail, contactEligibility)
 
           if (!contactEligibility.emailable) {
             previousSuccessfulEmail = null
