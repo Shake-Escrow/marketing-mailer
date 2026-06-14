@@ -310,6 +310,7 @@ export default function App() {
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
   const [dbLoadLimit, setDbLoadLimit] = useState(String(MAX_DB_RECIPIENT_LOAD))
+  const [languageFilter, setLanguageFilter] = useState('EN')
 
   const sentTodayWithSession = dayEstimate
     ? dayEstimate.sentToday
@@ -708,6 +709,7 @@ export default function App() {
       const { contacts, total } = await fetchEmailableContacts(token, {
         limit: requestedLimit,
         clientId: account.username,
+        language: languageFilter,
         ...(isShakeDefiDotComUser ? { selectionMode: 'shakedefi_com_mix' } : {}),
       })
       if (!contacts.length) {
@@ -1261,6 +1263,18 @@ export default function App() {
                         }}
                         placeholder={projectedNext24HourRecipientLoad == null ? String(MAX_DB_RECIPIENT_LOAD) : String(projectedNext24HourRecipientLoad)}
                       />
+                    </label>
+
+                    <label className="db-load-limit-field">
+                      <span>Language</span>
+                      <select
+                        value={languageFilter}
+                        disabled={dbRecipientsLoading}
+                        onChange={(e) => setLanguageFilter(e.target.value)}
+                      >
+                        <option value="EN">English (EN)</option>
+                        <option value="ES">Spanish (ES)</option>
+                      </select>
                     </label>
 
                     <button

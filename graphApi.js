@@ -351,8 +351,8 @@ export async function fetchContactsActivity(accessToken, options = {}) {
 }
 
 /**
- * Fetches contacts that have never been contacted (last_contacted IS NULL)
- * and whose domain is assessed as appropriate, complete with merged template_variables.
+ * Fetches contacts that pass marketing recency rules and whose domain is
+ * assessed as appropriate, complete with merged template_variables.
  * @param {string} accessToken
  * @param {{ limit?: number, offset?: number, clientId?: string }} [options]
  * @returns {{ contacts: object[], total: number }}
@@ -363,6 +363,7 @@ export async function fetchEmailableContacts(accessToken, options = {}) {
   if (options.limit)  params.set('limit',  String(options.limit))
   if (options.offset) params.set('offset', String(options.offset))
   if (options.selectionMode) params.set('selectionMode', String(options.selectionMode))
+  if (options.language) params.set('language', String(options.language))
   const qs = params.toString() ? `?${params}` : ''
 
   const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/emailable${qs}`, {
