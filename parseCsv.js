@@ -175,9 +175,10 @@ export function parseCsvFile(file) {
             return {
               email,
               name: parsedName,
-              __rowIndex: rowIndex,
               // Pass original + normalized columns through as template variables.
               ...templateData,
+              rowIndex,
+              __rowIndex: rowIndex,
             }
           })
           .filter(Boolean)

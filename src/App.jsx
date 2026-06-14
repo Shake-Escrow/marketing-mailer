@@ -5,7 +5,7 @@ import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
 import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
 import Header from './components/Header'
-import { applyTemplate, stripUnresolvedTokens } from './utils/template'
+import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
 import { findCurrentDay } from './utils/dayEstimator'
 import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
@@ -658,6 +658,17 @@ export default function App() {
     }
   }
 
+  const getTemplateVariablesForRecipient = (recipient = {}, backendTemplateVariables = {}) => {
+    const resolvedRecipient = withDefaultName(
+      recipient,
+      backendTemplateVariables?.name
+    )
+    return {
+      resolvedRecipient,
+      templateVariables: buildTemplateVariables(resolvedRecipient, backendTemplateVariables),
+    }
+  }
+
   const handleDocxUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -786,28 +797,20 @@ export default function App() {
   const previewRecipient = csvData?.recipients?.[selectedRecipient]
   const previewHtml = useMemo(() => {
     if (!docxData?.html) return ''
-    const resolvedRecipient = withDefaultName(
+    const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables?.name
+      previewEligibility?.template_variables || {}
     )
-    const variables = {
-      ...(previewEligibility?.template_variables || {}),
-      ...resolvedRecipient,
-    }
-    return applyTemplate(docxData.html, variables)
+    return applyTemplate(docxData.html, templateVariables)
   }, [docxData, previewRecipient, previewEligibility, defaultName])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
-    const resolvedRecipient = withDefaultName(
+    const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables?.name
+      previewEligibility?.template_variables || {}
     )
-    const variables = {
-      ...(previewEligibility?.template_variables || {}),
-      ...resolvedRecipient,
-    }
-    return applyTemplate(subject, variables)
+    return applyTemplate(subject, templateVariables)
   }, [subject, previewRecipient, previewEligibility, defaultName])
 
   useEffect(() => {
@@ -885,9 +888,9 @@ export default function App() {
         return
       }
 
-      const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
-      const contactEligibility = cachedEligibility ?? await checkMarketingContact(graphToken, normalizedEmail, { clientId: account.username })
-      if (!cachedEligibility) eligibilityCache.current.set(normalizedEmail, contactEligibility)
+      eligibilityCache.current.delete(normalizedEmail)
+      const contactEligibility = await checkMarketingContact(graphToken, normalizedEmail, { clientId: account.username })
+      eligibilityCache.current.set(normalizedEmail, contactEligibility)
 
       if (!contactEligibility.emailable) {
         setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'skipped-not-emailable', reason: contactEligibility.reason, rationale: contactEligibility.rationale }])
@@ -901,8 +904,10 @@ export default function App() {
         return
       }
 
-      const resolvedRecipient = withDefaultName(recipient, contactEligibility.template_variables?.name)
-      const templateVariables = { ...(contactEligibility.template_variables || {}), ...resolvedRecipient }
+      const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
+        recipient,
+        contactEligibility.template_variables || {}
+      )
       const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
       const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
@@ -958,6 +963,7 @@ export default function App() {
       const updatedHeaders = [...csvData.headers]
       const shouldUpdateCsvRows = canSendEmails && !csvData.fromDatabase
       const processedEmails = new Set()
+      const remainingRecipients = []
       let previousSuccessfulEmail = null
       const lastContactedKey = csvData.lastContactedKey || 'Last Contacted'
 
@@ -1006,15 +1012,13 @@ export default function App() {
             continue
           }
 
-          const cachedEligibility = eligibilityCache.current.get(normalizedEmail)
-          const contactEligibility = cachedEligibility ?? await checkMarketingContact(
+          eligibilityCache.current.delete(normalizedEmail)
+          const contactEligibility = await checkMarketingContact(
             marketingContactsToken,
             normalizedEmail,
             { clientId: account.username }
           )
-          if (!cachedEligibility) {
-            eligibilityCache.current.set(normalizedEmail, contactEligibility)
-          }
+          eligibilityCache.current.set(normalizedEmail, contactEligibility)
 
           if (!contactEligibility.emailable) {
             previousSuccessfulEmail = null
@@ -1043,14 +1047,10 @@ export default function App() {
             continue
           }
 
-          const resolvedRecipient = withDefaultName(
+          const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
             recipient,
-            contactEligibility.template_variables?.name
+            contactEligibility.template_variables || {}
           )
-          const templateVariables = {
-            ...(contactEligibility.template_variables || {}),
-            ...resolvedRecipient,
-          }
           const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
@@ -1079,6 +1079,7 @@ export default function App() {
           ])
         } catch (e) {
           previousSuccessfulEmail = null
+          remainingRecipients.push(recipient)
           setSendResults((prev) => [
             ...prev,
             {
@@ -1103,17 +1104,24 @@ export default function App() {
       if (shouldUpdateCsvRows) {
         const csvOutput = serializeCsv(updatedHeaders, updatedRows)
         setUpdatedCsvContent(csvOutput)
-        setCsvData((prev) =>
-          prev
-            ? {
-                ...prev,
-                rows: updatedRows,
-                headers: updatedHeaders,
-                lastContactedKey,
-              }
-            : prev
-        )
       }
+
+      setCsvData((prev) =>
+        prev
+          ? {
+              ...prev,
+              recipients: remainingRecipients,
+              ...(shouldUpdateCsvRows
+                ? {
+                    rows: updatedRows,
+                    headers: updatedHeaders,
+                    lastContactedKey,
+                  }
+                : {}),
+            }
+          : prev
+      )
+      setSelectedRecipient(0)
     } catch (e) {
       setError(`Unable to process recipients: ${e.message}`)
     } finally {
