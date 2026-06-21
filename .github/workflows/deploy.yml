@@ -10,7 +10,7 @@ jobs:
     permissions:
       contents: write
     env:
-      VITE_MESSAGEHUB_BASE_URL: https://shake-hub-eeg4gtecepcfepcm.canadacentral-01.azurewebsites.net
+      VITE_MESSAGEHUB_BASE_URL: https://api.shake-defi.com
     steps:
       - uses: actions/checkout@v4
 

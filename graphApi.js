@@ -83,7 +83,7 @@ function getMarketingContactsBaseUrl() {
     currentHostname === 'shakedefi.com' ||
     currentHostname === 'www.shakedefi.com'
   ) {
-    return 'https://shake-hub-eeg4gtecepcfepcm.canadacentral-01.azurewebsites.net'
+    return 'https://api.shake-defi.com'
   }
 
   return currentOrigin
