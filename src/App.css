@@ -49,6 +49,22 @@
   box-sizing: border-box;
 }
 
+.sender-account-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid #c5c9cf;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f2328;
+}
+
+.sender-account-field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .upload-grid {
   display: flex;
   flex-direction: column;

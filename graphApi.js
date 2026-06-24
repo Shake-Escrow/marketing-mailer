@@ -67,6 +67,68 @@ export async function sendEmail(accessToken, toEmail, toName, subject, htmlBody,
   return true;
 }
 
+/**
+ * Fetches the list of alternate sender accounts the signed-in user is
+ * permitted to send from (Approach A: backend-proxied SMTP).
+ * Only id/label/email metadata is returned — credentials never leave
+ * the backend.
+ * @param {string} accessToken
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ accounts: { id: string, label: string, email: string }[] }}
+ */
+export async function fetchSenderAccounts(accessToken, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/sender-accounts`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+  })
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+
+  return { accounts: body.accounts || [] }
+}
+
+/**
+ * Sends an email through a backend-proxied alternate account rather than
+ * the signed-in user's Microsoft mailbox. The backend resolves
+ * `senderAccountId` to its stored credentials (SMTP, IMAP-authenticated,
+ * etc.) and performs the send server-side, so no secrets are ever
+ * delivered to the frontend.
+ * @param {string} accessToken bearer token for the MessageHub backend
+ * @param {string} senderAccountId id returned by fetchSenderAccounts
+ * @param {{ toEmail: string, toName?: string, subject: string, htmlBody: string, ccEmail?: string }} message
+ * @param {{ clientId?: string }} [options]
+ */
+export async function sendEmailViaAccount(accessToken, senderAccountId, message, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const { toEmail, toName, subject, htmlBody, ccEmail } = message
+
+  const response = await fetch(`${apiBaseUrl}/api/marketing/send-email`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+    body: JSON.stringify({
+      senderAccountId,
+      to: { email: toEmail, name: toName || toEmail },
+      ...(ccEmail ? { cc: { email: ccEmail } } : {}),
+      subject,
+      html: htmlBody,
+    }),
+  })
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+
+  // Backend is expected to return { sent: true } on success.
+  return body.sent !== false
+}
+
 function getMarketingContactsBaseUrl() {
   const configuredBaseUrl = (import.meta.env.VITE_MESSAGEHUB_BASE_URL || '').trim()
 

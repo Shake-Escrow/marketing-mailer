@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, getAccessToken, sendEmail } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, getAccessToken, sendEmail, sendEmailViaAccount } from '../graphApi'
 import Header from './components/Header'
 import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
 import { findCurrentDay } from './utils/dayEstimator'
@@ -266,6 +266,8 @@ export default function App() {
   const [autoSending, setAutoSending] = useState(false)
   const [sessionSentCount, setSessionSentCount] = useState(0)
   const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
+  const [senderAccounts, setSenderAccounts] = useState([])
+  const [selectedSenderAccountId, setSelectedSenderAccountId] = useState('')
 
   // Local activity overlay requirement: the backend snapshot is cached, so the
   // current session's successful sends are layered onto the latest day bin.
@@ -365,6 +367,44 @@ export default function App() {
     username.endsWith('shakedefi.email') || username.endsWith('@shakedefi.com') || username.endsWith('@shake-defi.com')
   const canRunApiFlow = canSendEmails || username.endsWith('.onmicrosoft.com')
   const canAutoLoadRecipientsFromDb = canRunApiFlow && !mustUploadCsvRecipients
+
+  // Alternate sender accounts (Approach A): the backend stores credentials
+  // for accounts other than the signed-in Microsoft mailbox and only ever
+  // exposes id/label/email metadata to the frontend.
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canSendEmails) return
+    let cancelled = false
+    getAccessToken(instance, account, loginRequest)
+      .then((token) => fetchSenderAccounts(token, { clientId: account.username }))
+      .then(({ accounts }) => {
+        if (!cancelled) setSenderAccounts(accounts)
+      })
+      .catch(() => {
+        // Non-fatal — sending falls back to the signed-in Microsoft mailbox
+      })
+    return () => { cancelled = true }
+  }, [isAuthenticated, account, instance, canSendEmails])
+
+  // If the previously selected alternate account disappears (account list
+  // refreshed, user switched mailboxes), fall back to the default sender.
+  useEffect(() => {
+    if (!selectedSenderAccountId) return
+    if (senderAccounts.some((acct) => acct.id === selectedSenderAccountId)) return
+    setSelectedSenderAccountId('')
+  }, [senderAccounts, selectedSenderAccountId])
+
+  // Sends through either the signed-in Graph mailbox (default) or a
+  // backend-proxied alternate account, depending on the user's selection.
+  const sendPersonalizedEmail = (graphToken, { toEmail, toName, subject: emailSubject, htmlBody }) => (
+    selectedSenderAccountId
+      ? sendEmailViaAccount(
+          graphToken,
+          selectedSenderAccountId,
+          { toEmail, toName, subject: emailSubject, htmlBody },
+          { clientId: account.username }
+        )
+      : sendEmail(graphToken, toEmail, toName, emailSubject, htmlBody)
+  )
 
   useEffect(() => {
     if (!isAuthenticated || !account || !canRunApiFlow) return
@@ -918,7 +958,12 @@ export default function App() {
       const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + buildEmailSignatureHtml(languageFilter)
       const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
-      await sendEmail(graphToken, normalizedEmail, resolvedRecipient.name || recipient.company || recipient.email, personalizedSubject, personalizedHtml)
+      await sendPersonalizedEmail(graphToken, {
+        toEmail: normalizedEmail,
+        toName: resolvedRecipient.name || recipient.company || recipient.email,
+        subject: personalizedSubject,
+        htmlBody: personalizedHtml,
+      })
 
       await createMarketingContact(graphToken, null, {
         clientId: account.username,
@@ -1062,13 +1107,12 @@ export default function App() {
           const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + buildEmailSignatureHtml(languageFilter)
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
-          await sendEmail(
-            graphToken,
-            normalizedEmail,
-            resolvedRecipient.name || recipient.company || recipient.email,
-            personalizedSubject,
-            personalizedHtml
-          )
+          await sendPersonalizedEmail(graphToken, {
+            toEmail: normalizedEmail,
+            toName: resolvedRecipient.name || recipient.company || recipient.email,
+            subject: personalizedSubject,
+            htmlBody: personalizedHtml,
+          })
 
           const rowIndex = recipient.rowIndex
           if (shouldUpdateCsvRows && rowIndex !== undefined && updatedRows[rowIndex]) {
@@ -1343,6 +1387,24 @@ export default function App() {
                 placeholder="Your email subject"
               />
             </label>
+
+            {canSendEmails && senderAccounts.length > 0 && (
+              <label className="subject-field sender-account-field">
+                Send from
+                <select
+                  value={selectedSenderAccountId}
+                  disabled={sending || autoSending}
+                  onChange={(e) => setSelectedSenderAccountId(e.target.value)}
+                >
+                  <option value="">{account?.username || 'Microsoft account'} (default)</option>
+                  {senderAccounts.map((acct) => (
+                    <option key={acct.id} value={acct.id}>
+                      {acct.label || acct.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             {csvData?.recipients?.length > 0 && (
               <div className="preview-wrap">
