@@ -443,3 +443,120 @@ export async function fetchEmailableContacts(accessToken, options = {}) {
     total:    body.total    || 0,
   }
 }
+
+/**
+ * Registers a new SMTP sender account.
+ * The backend encrypts the secret at rest — it never comes back in any response.
+ * @param {string} accessToken
+ * @param {{
+ *   label: string,
+ *   email: string,
+ *   smtp_username: string,
+ *   secret: string,
+ *   provider?: 'gmail'|'google_workspace'|'office365'|'smtp',
+ *   smtp_host?: string,
+ *   smtp_port?: number,
+ *   smtp_secure?: 'starttls'|'ssl',
+ *   daily_send_cap?: number|null,
+ * }} payload
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ account: object }}
+ */
+export async function createSenderAccount(accessToken, payload, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/sender-accounts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+    body: JSON.stringify(payload),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { account: body.account }
+}
+
+/**
+ * Updates an existing sender account.
+ * Only label, is_active, and daily_send_cap can be patched —
+ * SMTP credentials cannot be changed after creation.
+ * @param {string} accessToken
+ * @param {string} id UUID returned by createSenderAccount / fetchSenderAccounts
+ * @param {{ label?: string, is_active?: boolean, daily_send_cap?: number|null }} updates
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ account: object }}
+ */
+export async function updateSenderAccount(accessToken, id, updates, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(
+    `${apiBaseUrl}/api/marketing/sender-accounts/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+      },
+      body: JSON.stringify(updates),
+    }
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { account: body.account }
+}
+
+/**
+ * Permanently deletes a sender account.
+ * The backend returns 409 if the account has existing send history —
+ * deactivate it via updateSenderAccount({ is_active: false }) instead.
+ * @param {string} accessToken
+ * @param {string} id
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ deleted: boolean }}
+ */
+export async function deleteSenderAccount(accessToken, id, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(
+    `${apiBaseUrl}/api/marketing/sender-accounts/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+      },
+    }
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { deleted: body.deleted === true }
+}
+
+/**
+ * Opens a live SMTP connection using the stored credential and optionally sends
+ * a test message. last_verified_at is only updated on success.
+ * @param {string} accessToken
+ * @param {string} id
+ * @param {string|null} [testRecipient] Address to receive a test message (optional)
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ verified: boolean, error: string|null }}
+ */
+export async function verifySenderAccount(accessToken, id, testRecipient = null, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(
+    `${apiBaseUrl}/api/marketing/sender-accounts/${encodeURIComponent(id)}/verify`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+      },
+      body: JSON.stringify(testRecipient ? { test_recipient: testRecipient } : {}),
+    }
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { verified: body.verified === true, error: body.error || null }
+}

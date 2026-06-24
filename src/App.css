@@ -342,3 +342,20 @@
 .auto-send-btn--active:hover:not(:disabled) {
   background: #2d1b1b;
 }
+
+.manage-accounts-btn {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #21262d;
+  color: #8b949e;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manage-accounts-btn:hover {
+  background: #30363d;
+  color: #e6edf3;
+}

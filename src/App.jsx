@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, getAccessToken, sendEmail, sendEmailViaAccount } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, createSenderAccount, deleteSenderAccount, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, getAccessToken, sendEmail, sendEmailViaAccount, updateSenderAccount, verifySenderAccount } from '../graphApi'
 import Header from './components/Header'
+import SenderAccountManager from './SenderAccountManager'
 import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
 import { findCurrentDay } from './utils/dayEstimator'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
@@ -268,6 +269,7 @@ export default function App() {
   const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
   const [senderAccounts, setSenderAccounts] = useState([])
   const [selectedSenderAccountId, setSelectedSenderAccountId] = useState('')
+  const [showAccountManager, setShowAccountManager] = useState(false)
 
   // Local activity overlay requirement: the backend snapshot is cached, so the
   // current session's successful sends are layered onto the latest day bin.
@@ -1406,6 +1408,12 @@ export default function App() {
               </label>
             )}
 
+            {canSendEmails && (
+              <button type="button" className="manage-accounts-btn" onClick={() => setShowAccountManager(true)}>
+                Manage accounts
+              </button>
+            )}
+
             {csvData?.recipients?.length > 0 && (
               <div className="preview-wrap">
                 <div className="recipient-list">
@@ -1500,6 +1508,16 @@ export default function App() {
             </div>
           )}
         </section>
+
+        {showAccountManager && (
+          <SenderAccountManager
+            instance={instance}
+            account={account}
+            loginRequest={loginRequest}
+            onClose={() => setShowAccountManager(false)}
+            onChanged={(updatedList) => setSenderAccounts(updatedList)}
+          />
+        )}
       </main>
     </>
   )
