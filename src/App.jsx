@@ -7,12 +7,16 @@ import { buildMarketingContactPayload, checkMarketingContact, createMarketingCon
 import Header from './components/Header'
 import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
 import { findCurrentDay } from './utils/dayEstimator'
-import shakeLogo from './assets/shake-logo_horizontal_grey.png'
 import shakeLogoDataUri from './assets/shake-logo_horizontal_grey.png?inline'
 
 const SHAKE_SITE_URL = 'https://shakedefi.com'
 
-const EMAIL_SIGNATURE_HTML = `<div style="margin-top:24px;text-align:center;"><a href="${SHAKE_SITE_URL}" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;border:0;"><img src="${shakeLogoDataUri}" alt="Shake Defi" border="0" style="display:block;max-width:192px;width:100%;height:auto;border:0;outline:none;text-decoration:none;"></a></div><div style="margin-top:24px;text-align:center;font-size:0.78rem;opacity:0.55;"><p style="margin:4px 0;">Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p><p style="margin:4px 0;"><a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p></div>`
+const buildEmailSignatureHtml = (language) => {
+  const unsubscribeLink = language === 'ES'
+    ? `<a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Cancelar suscripción</a> o responda "UnSub" si no desea recibir más correos nuestros.`
+    : `<a href="https://shakedefi.email/unsubscribe" style="color:inherit;text-decoration:underline;">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.`
+  return `<div style="margin-top:24px;text-align:center;"><a href="${SHAKE_SITE_URL}" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;border:0;"><img src="${shakeLogoDataUri}" alt="Shake Defi" border="0" style="display:block;max-width:192px;width:100%;height:auto;border:0;outline:none;text-decoration:none;"></a></div><div style="margin-top:24px;text-align:center;font-size:0.78rem;opacity:0.55;"><p style="margin:4px 0;">Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p><p style="margin:4px 0;">${unsubscribeLink}</p></div>`
+}
 import './App.css'
 
 const formatLocalTimestamp = (date = new Date()) => {
@@ -911,7 +915,7 @@ export default function App() {
         contactEligibility.template_variables || {},
         languageFilter
       )
-      const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
+      const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + buildEmailSignatureHtml(languageFilter)
       const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
       await sendEmail(graphToken, normalizedEmail, resolvedRecipient.name || recipient.company || recipient.email, personalizedSubject, personalizedHtml)
@@ -1055,7 +1059,7 @@ export default function App() {
             contactEligibility.template_variables || {},
             languageFilter
           )
-          const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
+          const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + buildEmailSignatureHtml(languageFilter)
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
 
           await sendEmail(
@@ -1366,15 +1370,7 @@ export default function App() {
                     <strong>Subject:</strong> {previewSubject || '—'}
                   </p>
                   <div className="email-html" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                  <div className="email-logo-wrap">
-                    <a href={SHAKE_SITE_URL} target="_blank" rel="noopener noreferrer">
-                      <img src={shakeLogo} alt="Shake Defi" className="email-logo" />
-                    </a>
-                  </div>
-                  <div className="email-footer">
-                    <p>Shake Defi, Inc. | 280 N Market St, Unit 321 | Brookfield, WI, 53045, United States</p>
-                    <p><a href="https://shakedefi.email/unsubscribe" target="_blank" rel="noreferrer">Unsubscribe</a> or reply with "UnSub" if you don't want this email from us.</p>
-                  </div>
+                  <div dangerouslySetInnerHTML={{ __html: buildEmailSignatureHtml(languageFilter) }} />
                 </div>
               </div>
             )}
