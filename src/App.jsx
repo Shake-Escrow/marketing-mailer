@@ -658,14 +658,14 @@ export default function App() {
     }
   }
 
-  const getTemplateVariablesForRecipient = (recipient = {}, backendTemplateVariables = {}) => {
+  const getTemplateVariablesForRecipient = (recipient = {}, backendTemplateVariables = {}, language = null) => {
     const resolvedRecipient = withDefaultName(
       recipient,
       backendTemplateVariables?.name
     )
     return {
       resolvedRecipient,
-      templateVariables: buildTemplateVariables(resolvedRecipient, backendTemplateVariables),
+      templateVariables: buildTemplateVariables(resolvedRecipient, backendTemplateVariables, language),
     }
   }
 
@@ -799,19 +799,21 @@ export default function App() {
     if (!docxData?.html) return ''
     const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables || {}
+      previewEligibility?.template_variables || {},
+      languageFilter
     )
     return applyTemplate(docxData.html, templateVariables)
-  }, [docxData, previewRecipient, previewEligibility, defaultName])
+  }, [docxData, previewRecipient, previewEligibility, defaultName, languageFilter])
 
   const previewSubject = useMemo(() => {
     if (!subject) return ''
     const { templateVariables } = getTemplateVariablesForRecipient(
       previewRecipient || {},
-      previewEligibility?.template_variables || {}
+      previewEligibility?.template_variables || {},
+      languageFilter
     )
     return applyTemplate(subject, templateVariables)
-  }, [subject, previewRecipient, previewEligibility, defaultName])
+  }, [subject, previewRecipient, previewEligibility, defaultName, languageFilter])
 
   useEffect(() => {
     if (!sendLogRef.current) return
@@ -906,7 +908,8 @@ export default function App() {
 
       const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
         recipient,
-        contactEligibility.template_variables || {}
+        contactEligibility.template_variables || {},
+        languageFilter
       )
       const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
       const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
@@ -1049,7 +1052,8 @@ export default function App() {
 
           const { resolvedRecipient, templateVariables } = getTemplateVariablesForRecipient(
             recipient,
-            contactEligibility.template_variables || {}
+            contactEligibility.template_variables || {},
+            languageFilter
           )
           const personalizedHtml = stripUnresolvedTokens(applyTemplate(docxData.html, templateVariables)) + EMAIL_SIGNATURE_HTML
           const personalizedSubject = stripUnresolvedTokens(applyTemplate(subject, templateVariables))
