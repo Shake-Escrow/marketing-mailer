@@ -495,6 +495,10 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
+  const handleSenderAccountsChanged = useCallback((updatedList) => {
+    setSenderAccounts(updatedList)
+  }, [])
+
   // Display requirement: "Sent today" and pacing use the cached backend
   // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
@@ -1623,7 +1627,7 @@ export default function App() {
             account={account}
             loginRequest={loginRequest}
             onClose={() => setShowAccountManager(false)}
-            onChanged={(updatedList) => setSenderAccounts(updatedList)}
+            onChanged={handleSenderAccountsChanged}
           />
         )}
       </main>
