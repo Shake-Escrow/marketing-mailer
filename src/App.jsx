@@ -302,22 +302,36 @@ export default function App() {
     ))
   }, [activityBins, sessionSentCount])
 
+  // Manual override for today's send target. Stored as the raw text the user
+  // typed so the input can hold invalid/in-progress values without losing them;
+  // an empty string means "use the computed curve value".
+  const [targetOverride, setTargetOverride] = useState('')
+  const parsedTargetOverride = useMemo(() => {
+    const trimmed = targetOverride.trim()
+    if (trimmed === '') return null
+    const value = Number(trimmed)
+    return Number.isFinite(value) && value >= 0 ? Math.round(value) : null
+  }, [targetOverride])
+
   const dayEstimate = useMemo(() => {
     if (!effectiveActivityBins || effectiveActivityBins.length !== 7) return null
     const counts = effectiveActivityBins.map((b) => b.count)
     const completedDayCounts = counts.slice(0, -1)
     const sentToday = counts[counts.length - 1] || 0
 
+    // computedTarget is always the curve-derived value; target is what the
+    // rest of the app should actually use (the manual override when present).
+    const withTarget = (currentDay) => {
+      const computedTarget = getDailyTargetForCampaignDay(currentDay)
+      const target = parsedTargetOverride ?? computedTarget
+      return { currentDay, target, computedTarget, sentToday }
+    }
+
     // The backend histogram includes six completed daily bins followed by the
     // current in-progress SQL day. Fit only the completed days, then advance
     // the returned day index by one bin so it represents today.
     if (!completedDayCounts.some((count) => count > 0)) {
-      const currentDay = 1
-      return {
-        currentDay,
-        target: getDailyTargetForCampaignDay(currentDay),
-        sentToday,
-      }
+      return withTarget(1)
     }
     try {
       const todayOffsetFromFirstCompletedBin = completedDayCounts.length
@@ -327,12 +341,11 @@ export default function App() {
         CAMPAIGN_CURVE_C,
         todayOffsetFromFirstCompletedBin,
       )
-      const target = getDailyTargetForCampaignDay(currentDay)
-      return { currentDay, target, sentToday }
+      return withTarget(currentDay)
     } catch {
       return null
     }
-  }, [effectiveActivityBins])
+  }, [effectiveActivityBins, parsedTargetOverride])
   const [parsedDocxHtml, setParsedDocxHtml] = useState('')
   const [previewEligibility, setPreviewEligibility] = useState(null)
   const [dbRecipientsLoading, setDbRecipientsLoading] = useState(false)
@@ -1293,7 +1306,36 @@ export default function App() {
                     {dayEstimate && (
                       <div className="histogram-estimate">
                         <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
-                        <span>Today&apos;s target: <strong>{dayEstimate.target}</strong></span>
+                        <span className="target-override-row">
+                          Today&apos;s target:{' '}
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="numeric"
+                            className="target-override-input"
+                            value={targetOverride !== '' ? targetOverride : String(dayEstimate.target)}
+                            onChange={(e) => setTargetOverride(e.target.value)}
+                            style={{ width: '4.5em', marginLeft: '0.35em' }}
+                            aria-label="Override today's send target"
+                          />
+                          {targetOverride !== '' && (
+                            <button
+                              type="button"
+                              className="target-override-reset"
+                              onClick={() => setTargetOverride('')}
+                              title="Clear override and use the computed target"
+                              style={{ marginLeft: '0.4em' }}
+                            >
+                              Reset
+                            </button>
+                          )}
+                          {targetOverride !== '' && parsedTargetOverride !== null && parsedTargetOverride !== dayEstimate.computedTarget && (
+                            <span style={{ marginLeft: '0.4em', fontWeight: 400, fontSize: '0.85em', color: '#8b949e' }}>
+                              (computed: {dayEstimate.computedTarget})
+                            </span>
+                          )}
+                        </span>
                         <span>Sent today: <strong>{sentTodayWithSession}</strong></span>
                         <span>Next 24h sends: <strong>{projectedNext24HourRecipientLoad}</strong></span>
                         <span>Sent this session: <strong>{sessionSentCount}</strong></span>
