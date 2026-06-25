@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
