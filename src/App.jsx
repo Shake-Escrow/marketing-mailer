@@ -499,13 +499,17 @@ export default function App() {
   // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
     if (!dayEstimate || dayEstimate.target <= 0) return null
-    // No schedule outside the 9 am – midnight GMT send window.
-    if (!isWithinGmtSendWindow()) return null
+    const withinWindow = isWithinGmtSendWindow()
+    const windowStartMs = getGmtWindowStartMs()
     const windowEndMs = getGmtWindowEndMs()
+    // Ahead of the window, pace as though "now" is the moment the window opens
+    // — that gives an honest schedule/countdown to 9 am instead of refusing to
+    // compute one at all, so auto-send can be armed in advance.
+    const sendableStartTime = withinWindow ? now : windowStartMs
     const rawDayEndTime = getActivityDayEndTime(effectiveActivityBins, now)
     // Cap the day boundary at midnight GMT so pacing never spills past the window.
     const dayEndTime = Math.min(rawDayEndTime, windowEndMs)
-    const remainingDayMs = Math.max(dayEndTime - now, 0)
+    const remainingDayMs = Math.max(dayEndTime - sendableStartTime, 0)
     if (remainingDayMs <= 0) return null
     const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
     const activeDailyTarget = remainingDailyTarget > 0 ? remainingDailyTarget : nextDayTarget
@@ -514,8 +518,8 @@ export default function App() {
       ? remainingDayMs / activeDailyTarget
       : DAY_MS / activeDailyTarget
     const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
-    const baseDelay = getSendBaseDelayMs({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now })
-    const nextSendTime = scheduledNextSendAt ?? now + baseDelay
+    const baseDelay = getSendBaseDelayMs({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now: sendableStartTime })
+    const nextSendTime = scheduledNextSendAt ?? sendableStartTime + baseDelay
     const timeUntilNextMs = nextSendTime - now
     return {
       periodMs,
@@ -528,6 +532,8 @@ export default function App() {
       sentToday: sentTodayWithSession,
       startsTomorrow: remainingDailyTarget <= 0,
       targetCampaignDay: remainingDailyTarget > 0 ? dayEstimate.currentDay : dayEstimate.currentDay + 1,
+      waitingForWindow: !withinWindow,
+      windowStartTime: windowStartMs,
     }
   }, [dayEstimate, effectiveActivityBins, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
@@ -638,12 +644,6 @@ export default function App() {
       setScheduledNextSendAt(null)
       return
     }
-    // Do not schedule any sends outside the 9 am – midnight GMT window.
-    if (!isWithinGmtSendWindow()) {
-      console.log('[Shake Marketing] auto-send useEffect: outside GMT send window (9 am–midnight), skipping timer')
-      setScheduledNextSendAt(null)
-      return
-    }
     if (!dayEstimate) {
       setAutoSending(false)
       setScheduledNextSendAt(null)
@@ -656,11 +656,19 @@ export default function App() {
     }
 
     const scheduleStartTime = Date.now()
+    const withinWindow = isWithinGmtSendWindow()
+    const windowStartMs = getGmtWindowStartMs()
     const windowEndMs = getGmtWindowEndMs()
+    // Ahead of the window, pace from window-open rather than from right now —
+    // this lets auto-send be armed in advance and fire itself once 9 am GMT arrives.
+    const sendableStartTime = withinWindow ? scheduleStartTime : windowStartMs
+    if (!withinWindow) {
+      console.log('[Shake Marketing] auto-send useEffect: outside GMT send window (9 am–midnight), arming for window open at', new Date(windowStartMs).toISOString())
+    }
     const rawDayEndTime = getActivityDayEndTime(effectiveActivityBins, scheduleStartTime)
     // Cap at midnight GMT so pacing never fires after the send window closes.
     const dayEndTime = Math.min(rawDayEndTime, windowEndMs)
-    const remainingDayMs = Math.max(dayEndTime - scheduleStartTime, 0)
+    const remainingDayMs = Math.max(dayEndTime - sendableStartTime, 0)
     if (remainingDayMs <= 0) {
       setAutoSending(false)
       setScheduledNextSendAt(null)
@@ -682,12 +690,17 @@ export default function App() {
       remainingDayMs,
       periodMs,
       lastSendTime,
-      now: scheduleStartTime,
+      now: sendableStartTime,
     })
+    // baseDelay is measured from sendableStartTime (which may be hours in the
+    // future); convert back to a real wall-clock delay from right now so
+    // setTimeout fires at the correct moment either way.
+    const targetFireTime = sendableStartTime + baseDelay
+    const delayFromNow = Math.max(targetFireTime - scheduleStartTime, 0)
     // If the computed wait is already due, send now and do not apply jitter.
-    const delay = baseDelay < 1
+    const delay = delayFromNow < 1
       ? 0
-      : Math.max(0, baseDelay + getRandomSendJitterMs(periodMs))
+      : Math.max(0, delayFromNow + getRandomSendJitterMs(periodMs))
     const nextSendTime = scheduleStartTime + delay
     setScheduledNextSendAt(nextSendTime)
 
@@ -1345,13 +1358,23 @@ export default function App() {
                     <div className="histogram-schedule">
                       {sendSchedule ? (
                         <>
+                          {sendSchedule.waitingForWindow && (
+                            <span className="schedule-window-wait">
+                              ⏳ Outside the 9 am–midnight GMT send window — armed for window open
+                            </span>
+                          )}
                           <span>Send every: <strong>{formatDuration(sendSchedule.periodMs)}</strong></span>
                           {sendSchedule.lastSendTime && (
                             <span>Last send: <strong>{formatDuration(now - sendSchedule.lastSendTime)} ago</strong></span>
                           )}
                           {sendSchedule.timeUntilNextMs <= 0
                             ? <span className="schedule-send-now">Send now</span>
-                            : <span>Next send in: <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong></span>
+                            : (
+                              <span>
+                                {sendSchedule.waitingForWindow ? 'Window opens / first send in: ' : 'Next send in: '}
+                                <strong>{formatDuration(sendSchedule.timeUntilNextMs)}</strong>
+                              </span>
+                            )
                           }
                         </>
                       ) : (
