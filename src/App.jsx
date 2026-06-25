@@ -237,6 +237,25 @@ const shuffleArray = (items) => {
   return shuffled
 }
 
+// GMT send-window helpers — emails may only be dispatched between 9 am and
+// midnight GMT. All three functions are pure and recompute from wall-clock
+// time on every call, so they stay accurate across the 10-second `now` ticks.
+const isWithinGmtSendWindow = () => {
+  const utcHour = new Date().getUTCHours()
+  // Inclusive of 9 am, exclusive of midnight (hour 0 of the next day).
+  return utcHour >= 9
+}
+
+const getGmtWindowEndMs = () => {
+  const d = new Date()
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 24, 0, 0, 0)
+}
+
+const getGmtWindowStartMs = () => {
+  const d = new Date()
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9, 0, 0, 0)
+}
+
 export default function App() {
   const { instance, accounts } = useMsal()
   const isAuthenticated = useIsAuthenticated()
@@ -467,7 +486,12 @@ export default function App() {
   // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
     if (!dayEstimate || dayEstimate.target <= 0) return null
-    const dayEndTime = getActivityDayEndTime(effectiveActivityBins, now)
+    // No schedule outside the 9 am – midnight GMT send window.
+    if (!isWithinGmtSendWindow()) return null
+    const windowEndMs = getGmtWindowEndMs()
+    const rawDayEndTime = getActivityDayEndTime(effectiveActivityBins, now)
+    // Cap the day boundary at midnight GMT so pacing never spills past the window.
+    const dayEndTime = Math.min(rawDayEndTime, windowEndMs)
     const remainingDayMs = Math.max(dayEndTime - now, 0)
     if (remainingDayMs <= 0) return null
     const nextDayTarget = getDailyTargetForCampaignDay(dayEstimate.currentDay + 1)
@@ -601,6 +625,12 @@ export default function App() {
       setScheduledNextSendAt(null)
       return
     }
+    // Do not schedule any sends outside the 9 am – midnight GMT window.
+    if (!isWithinGmtSendWindow()) {
+      console.log('[Shake Marketing] auto-send useEffect: outside GMT send window (9 am–midnight), skipping timer')
+      setScheduledNextSendAt(null)
+      return
+    }
     if (!dayEstimate) {
       setAutoSending(false)
       setScheduledNextSendAt(null)
@@ -613,7 +643,10 @@ export default function App() {
     }
 
     const scheduleStartTime = Date.now()
-    const dayEndTime = getActivityDayEndTime(effectiveActivityBins, scheduleStartTime)
+    const windowEndMs = getGmtWindowEndMs()
+    const rawDayEndTime = getActivityDayEndTime(effectiveActivityBins, scheduleStartTime)
+    // Cap at midnight GMT so pacing never fires after the send window closes.
+    const dayEndTime = Math.min(rawDayEndTime, windowEndMs)
     const remainingDayMs = Math.max(dayEndTime - scheduleStartTime, 0)
     if (remainingDayMs <= 0) {
       setAutoSending(false)
@@ -919,6 +952,11 @@ export default function App() {
 
   const sendNextRecipient = async () => {
     if (!account || !csvData?.recipients?.length || !docxData) return
+    // Belt-and-suspenders: abort if we have somehow landed outside the window.
+    if (!isWithinGmtSendWindow()) {
+      console.log('[Shake Marketing] sendNextRecipient: outside GMT send window (9 am–midnight), aborting send')
+      return
+    }
 
     const recipient = csvData.recipients[0]
     const normalizedEmail = recipient.email.trim().toLowerCase()
@@ -991,6 +1029,11 @@ export default function App() {
 
     if (isJmusilaScheduledOnlyUser) {
       setError('This account may only send emails using the paced sendSchedule. Use Start Auto-Send instead of Send All Emails.')
+      return
+    }
+
+    if (!isWithinGmtSendWindow()) {
+      setError('Emails can only be sent between 9 am and midnight GMT.')
       return
     }
 
