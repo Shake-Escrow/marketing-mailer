@@ -560,3 +560,27 @@ export async function verifySenderAccount(accessToken, id, testRecipient = null,
   if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
   return { verified: body.verified === true, error: body.error || null }
 }
+
+/**
+ * Fetches a 7-day send histogram for a specific sender account.
+ * Returns bins ordered oldest to newest, matching the contacts activity shape.
+ * @param {string} accessToken
+ * @param {string} senderAccountId UUID
+ * @param {{ clientId?: string }} [options]
+ * @returns {{ bins: { day: string, bin_start_at?: string, bin_end_at?: string, count: number }[], last_send_at: string|null }}
+ */
+export async function fetchSenderAccountActivity(accessToken, senderAccountId, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(
+    `${apiBaseUrl}/api/marketing/sender-accounts/${encodeURIComponent(senderAccountId)}/activity`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+      },
+    }
+  )
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  return { bins: body.bins || [], last_send_at: body.last_send_at || null }
+}

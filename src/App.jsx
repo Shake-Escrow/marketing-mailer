@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, createSenderAccount, deleteSenderAccount, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, getAccessToken, sendEmail, sendEmailViaAccount, updateSenderAccount, verifySenderAccount } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, createSenderAccount, deleteSenderAccount, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, fetchSenderAccountActivity, getAccessToken, sendEmail, sendEmailViaAccount, updateSenderAccount, verifySenderAccount } from '../graphApi'
 import Header from './components/Header'
 import SenderAccountManager from './SenderAccountManager'
 import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
@@ -289,18 +289,33 @@ export default function App() {
   const [senderAccounts, setSenderAccounts] = useState([])
   const [selectedSenderAccountId, setSelectedSenderAccountId] = useState('')
   const [showAccountManager, setShowAccountManager] = useState(false)
+  const [senderAccountActivity, setSenderAccountActivity] = useState(null)
+
+  // When a sender account is selected from the "Send from" dropdown, switch all
+  // histogram, pacing, and scheduling state to that account's data.  When the
+  // selection is cleared (the default Microsoft mailbox), revert to the contacts
+  // activity histogram.
+  const activeBins = useMemo(() => (
+    selectedSenderAccountId ? (senderAccountActivity?.bins || null) : activityBins
+  ), [selectedSenderAccountId, senderAccountActivity, activityBins])
+
+  const activeLastSendAt = useMemo(() => (
+    selectedSenderAccountId ? (senderAccountActivity?.last_send_at || null) : activityLastSendAt
+  ), [selectedSenderAccountId, senderAccountActivity, activityLastSendAt])
 
   // Local activity overlay requirement: the backend snapshot is cached, so the
   // current session's successful sends are layered onto the latest day bin.
+  // This overlay only applies to the contacts histogram, not the per-account one.
   const effectiveActivityBins = useMemo(() => {
-    if (!activityBins?.length) return activityBins
-    if (sessionSentCount <= 0) return activityBins
-    return activityBins.map((bin, index) => (
-      index === activityBins.length - 1
+    if (!activeBins?.length) return activeBins
+    if (sessionSentCount <= 0) return activeBins
+    if (selectedSenderAccountId) return activeBins
+    return activeBins.map((bin, index) => (
+      index === activeBins.length - 1
         ? { ...bin, count: bin.count + sessionSentCount }
         : bin
     ))
-  }, [activityBins, sessionSentCount])
+  }, [activeBins, sessionSentCount, selectedSenderAccountId])
 
   // Manual override for today's send target. Stored as the raw text the user
   // typed so the input can hold invalid/in-progress values without losing them;
@@ -499,6 +514,22 @@ export default function App() {
     setSenderAccounts(updatedList)
   }, [])
 
+  // Fetch per-account send histogram when a specific sender account is selected.
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canSendEmails || !selectedSenderAccountId) {
+      setSenderAccountActivity(null)
+      return
+    }
+    let cancelled = false
+    getAccessToken(instance, account, loginRequest)
+      .then((token) => fetchSenderAccountActivity(token, selectedSenderAccountId, { clientId: account.username }))
+      .then(({ bins, last_send_at }) => {
+        if (!cancelled) setSenderAccountActivity({ bins, last_send_at })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAuthenticated, account, instance, canSendEmails, selectedSenderAccountId])
+
   // Display requirement: "Sent today" and pacing use the cached backend
   // histogram plus successful sends from this page session.
   const sendSchedule = useMemo(() => {
@@ -521,7 +552,7 @@ export default function App() {
     const periodMs = remainingDailyTarget > 0
       ? remainingDayMs / activeDailyTarget
       : DAY_MS / activeDailyTarget
-    const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
+    const lastSendTime = activeLastSendAt ? new Date(activeLastSendAt).getTime() : null
     const baseDelay = getSendBaseDelayMs({ remainingDailyTarget, remainingDayMs, periodMs, lastSendTime, now: sendableStartTime })
     const nextSendTime = scheduledNextSendAt ?? sendableStartTime + baseDelay
     const timeUntilNextMs = nextSendTime - now
@@ -539,7 +570,7 @@ export default function App() {
       waitingForWindow: !withinWindow,
       windowStartTime: windowStartMs,
     }
-  }, [dayEstimate, effectiveActivityBins, activityLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
+  }, [dayEstimate, effectiveActivityBins, activeLastSendAt, now, remainingDailyTarget, sentTodayWithSession, scheduledNextSendAt])
 
   // Start requirement: DB-capable users may start auto-send with an empty queue;
   // the queue-refill effect below will load recipients on demand.
@@ -688,7 +719,7 @@ export default function App() {
     const periodMs = remainingDailyTarget > 0
       ? remainingDayMs / activeDailyTarget
       : DAY_MS / activeDailyTarget
-    const lastSendTime = activityLastSendAt ? new Date(activityLastSendAt).getTime() : null
+    const lastSendTime = activeLastSendAt ? new Date(activeLastSendAt).getTime() : null
     const baseDelay = getSendBaseDelayMs({
       remainingDailyTarget,
       remainingDayMs,
@@ -719,7 +750,7 @@ export default function App() {
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [autoSending, dayEstimate, effectiveActivityBins, remainingDailyTarget, csvData?.recipients?.length, activityLastSendAt, canAutoLoadRecipientsFromDb])
+  }, [autoSending, dayEstimate, effectiveActivityBins, remainingDailyTarget, csvData?.recipients?.length, activeLastSendAt, canAutoLoadRecipientsFromDb])
 
   let parseDocxModulePromise
 
@@ -1302,9 +1333,12 @@ export default function App() {
 
               {effectiveActivityBins && (() => {
                 const maxCount = Math.max(...effectiveActivityBins.map((b) => b.count), 1)
+                const title = selectedSenderAccountId
+                  ? 'Account sends — last 7 days'
+                  : 'Your sends — last 7 days'
                 return (
                   <div className="activity-histogram">
-                    <h3>Your sends — last 7 days</h3>
+                    <h3>{title}</h3>
                     <div className="histogram-bars">
                       {effectiveActivityBins.map(({ day, count }) => {
                         const heightPct = count > 0 ? Math.max(Math.round((count / maxCount) * 100), 6) : 0
@@ -1324,7 +1358,7 @@ export default function App() {
                       <div className="histogram-estimate">
                         <span>Estimated campaign day: <strong>{dayEstimate.currentDay}</strong></span>
                         <span className="target-override-row">
-                          Today&apos;s target:{' '}
+                          Today's target:{' '}
                           <input
                             type="number"
                             min="0"
