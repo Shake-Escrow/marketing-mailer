@@ -1077,11 +1077,19 @@ export default function App() {
         htmlBody: personalizedHtml,
       })
 
-      await createMarketingContact(graphToken, null, {
-        clientId: account.username,
-        previousSuccessfulEmail: normalizedEmail,
-        fromEmail: getActiveSenderEmail(),
-      })
+      // Only the default-mailbox path needs this round trip -- an
+      // alternate-account send already updated marketing.contacts directly
+      // inside SenderAccounts.send_email(), atomically with the SMTP send
+      // and sender_account_send_log write. Reporting it here too would just
+      // be a second, redundant network round trip purely to re-run the same
+      // idempotent UPDATE.
+      if (!selectedSenderAccountId) {
+        await createMarketingContact(graphToken, null, {
+          clientId: account.username,
+          previousSuccessfulEmail: normalizedEmail,
+          fromEmail: getActiveSenderEmail(),
+        })
+      }
 
       setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'sent', rationale: contactEligibility.rationale }])
       recordLocalEmailSend()
@@ -1240,7 +1248,12 @@ export default function App() {
             updatedRows[rowIndex][lastContactedKey] = formatLocalTimestamp()
           }
 
-          previousSuccessfulEmail = normalizedEmail
+          // Same reasoning as sendNextRecipient: an alternate-account send is
+          // already recorded in marketing.contacts by SenderAccounts.py
+          // itself, so there's nothing left to flush via previousSuccessfulEmail.
+          // Leaving it null here also means the post-loop flush below
+          // correctly no-ops for a run that ends on a Path B send.
+          previousSuccessfulEmail = selectedSenderAccountId ? null : normalizedEmail
           recordLocalEmailSend()
           setSendResults((prev) => [
             ...prev,
