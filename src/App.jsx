@@ -455,6 +455,17 @@ export default function App() {
       : sendEmail(graphToken, toEmail, toName, emailSubject, htmlBody)
   )
 
+  // The address an email actually goes out FROM, as opposed to account.username
+  // (the operator) -- the alternate sender account's own email when one is
+  // selected, otherwise the signed-in Graph mailbox. Used to populate
+  // marketing.contacts.last_sent_from_email so it stays accurate for both
+  // send paths, not just the default one.
+  const getActiveSenderEmail = () => (
+    selectedSenderAccountId
+      ? (senderAccounts.find((acct) => acct.id === selectedSenderAccountId)?.email || null)
+      : (account?.username || null)
+  )
+
   useEffect(() => {
     if (!isAuthenticated || !account || !canRunApiFlow) return
     let cancelled = false
@@ -1069,6 +1080,7 @@ export default function App() {
       await createMarketingContact(graphToken, null, {
         clientId: account.username,
         previousSuccessfulEmail: normalizedEmail,
+        fromEmail: getActiveSenderEmail(),
       })
 
       setSendResults((prev) => [...prev, { email: normalizedEmail, status: 'sent', rationale: contactEligibility.rationale }])
@@ -1116,6 +1128,8 @@ export default function App() {
     try {
       const graphToken = await getAccessToken(instance, account, loginRequest)
       const marketingContactsToken = graphToken
+      // Stable for the whole run -- the sender dropdown is disabled while sending.
+      const activeSenderEmail = getActiveSenderEmail()
 
       const updatedRows = csvData.rows.map((row) => ({ ...row }))
       const updatedHeaders = [...csvData.headers]
@@ -1155,6 +1169,7 @@ export default function App() {
             {
               clientId: account.username,
               previousSuccessfulEmail,
+              fromEmail: activeSenderEmail,
             }
           )
 
@@ -1255,6 +1270,7 @@ export default function App() {
         await createMarketingContact(marketingContactsToken, null, {
           clientId: account.username,
           previousSuccessfulEmail,
+          fromEmail: activeSenderEmail,
           skipContactCreate: true,
         })
       }

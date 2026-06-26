@@ -282,6 +282,13 @@ export async function createMarketingContact(accessToken, contactPayload, option
           ? {
               previousSuccessfulSend: {
                 email: String(options.previousSuccessfulEmail).trim().toLowerCase(),
+                // The address the email was actually sent FROM -- account.username
+                // for the default Graph mailbox, or the selected sender account's
+                // own email for an alternate-account send. Distinct from the
+                // x-client-id header below, which is always the operator.
+                ...(options.fromEmail
+                  ? { fromEmail: String(options.fromEmail).trim().toLowerCase() }
+                  : {}),
               },
             }
           : {}),
