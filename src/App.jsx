@@ -284,12 +284,20 @@ export default function App() {
   const [activityLastSendAt, setActivityLastSendAt] = useState(null)
   const [now, setNow] = useState(() => Date.now())
   const [autoSending, setAutoSending] = useState(false)
-  const [sessionSentCount, setSessionSentCount] = useState(0)
+  // Keyed by sender identity ('default' for the signed-in mailbox, otherwise
+  // the sender account id) so switching "Send from" mid-session doesn't carry
+  // one sender's local counts over onto another's.
+  const [sessionSentCounts, setSessionSentCounts] = useState({})
+  const [localLastSendAts, setLocalLastSendAts] = useState({})
   const [scheduledNextSendAt, setScheduledNextSendAt] = useState(null)
   const [senderAccounts, setSenderAccounts] = useState([])
   const [selectedSenderAccountId, setSelectedSenderAccountId] = useState('')
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [senderAccountActivity, setSenderAccountActivity] = useState(null)
+
+  const activeSenderKey = selectedSenderAccountId || 'default'
+  const sessionSentCount = sessionSentCounts[activeSenderKey] || 0
+  const localLastSendAt = localLastSendAts[activeSenderKey] || null
 
   // When a sender account is selected from the "Send from" dropdown, switch all
   // histogram, pacing, and scheduling state to that account's data.  When the
@@ -299,23 +307,30 @@ export default function App() {
     selectedSenderAccountId ? (senderAccountActivity?.bins || null) : activityBins
   ), [selectedSenderAccountId, senderAccountActivity, activityBins])
 
-  const activeLastSendAt = useMemo(() => (
-    selectedSenderAccountId ? (senderAccountActivity?.last_send_at || null) : activityLastSendAt
-  ), [selectedSenderAccountId, senderAccountActivity, activityLastSendAt])
+  // Each side -- the backend snapshot and this session's local sends -- can be
+  // the more recent one depending on when the snapshot was last fetched, so
+  // take whichever is newer rather than trusting only one source.
+  const activeLastSendAt = useMemo(() => {
+    const cachedLastSendAt = selectedSenderAccountId ? (senderAccountActivity?.last_send_at || null) : activityLastSendAt
+    if (!localLastSendAt) return cachedLastSendAt
+    if (!cachedLastSendAt) return localLastSendAt
+    return new Date(localLastSendAt) > new Date(cachedLastSendAt) ? localLastSendAt : cachedLastSendAt
+  }, [selectedSenderAccountId, senderAccountActivity, activityLastSendAt, localLastSendAt])
 
-  // Local activity overlay requirement: the backend snapshot is cached, so the
-  // current session's successful sends are layered onto the latest day bin.
-  // This overlay only applies to the contacts histogram, not the per-account one.
+  // Local activity overlay requirement: the backend snapshot is cached (fetched
+  // once per day-bin for the default mailbox, once per account selection for an
+  // alternate sender account), so this session's successful sends are layered
+  // onto the latest day bin -- for whichever sender is currently active -- to
+  // avoid needing an extra DB round trip after every single send.
   const effectiveActivityBins = useMemo(() => {
     if (!activeBins?.length) return activeBins
     if (sessionSentCount <= 0) return activeBins
-    if (selectedSenderAccountId) return activeBins
     return activeBins.map((bin, index) => (
       index === activeBins.length - 1
         ? { ...bin, count: bin.count + sessionSentCount }
         : bin
     ))
-  }, [activeBins, sessionSentCount, selectedSenderAccountId])
+  }, [activeBins, sessionSentCount])
 
   // Manual override for today's send target. Stored as the raw text the user
   // typed so the input can hold invalid/in-progress values without losing them;
@@ -501,7 +516,8 @@ export default function App() {
           if (cancelled) return
           setActivityBins(bins)
           setActivityLastSendAt(last_send_at)
-          setSessionSentCount(0)
+          setSessionSentCounts((prev) => ({ ...prev, default: 0 }))
+          setLocalLastSendAts((prev) => ({ ...prev, default: null }))
           setScheduledNextSendAt(null)
         })
         .catch(() => {})
@@ -1016,10 +1032,14 @@ export default function App() {
   }
 
   // Cached activity requirement: only successful email sends update Last send,
-  // Sent this session, Sent today, and downstream pacing calculations.
+  // Sent this session, Sent today, and downstream pacing calculations -- without
+  // an extra DB round trip per send. Keyed by sender identity so this stays
+  // correct if "Send from" is switched between runs.
   const recordLocalEmailSend = (sendDate = new Date()) => {
-    setActivityLastSendAt(sendDate.toISOString())
-    setSessionSentCount((n) => n + 1)
+    const key = selectedSenderAccountId || 'default'
+    const iso = sendDate.toISOString()
+    setLocalLastSendAts((prev) => ({ ...prev, [key]: iso }))
+    setSessionSentCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
   }
 
   const sendNextRecipient = async () => {
