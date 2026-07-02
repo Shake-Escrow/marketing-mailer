@@ -266,6 +266,7 @@ export default function App() {
   const autoDbLoadInProgressRef = useRef(false)
   const autoDbLoadExhaustedRef = useRef(false)
   const activityRefreshInProgressRef = useRef(false)
+  const senderAccountActivityRefreshInProgressRef = useRef(false)
   const lastScheduleDiagnosticKeyRef = useRef('')
   const dbLoadLimitEditedRef = useRef(false)
   const MAX_DB_RECIPIENT_LOAD = 500
@@ -556,6 +557,51 @@ export default function App() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [isAuthenticated, account, instance, canSendEmails, selectedSenderAccountId])
+
+  // Rollover refresh for the selected alternate sender account -- mirrors the
+  // default-mailbox effect above. Without this, senderAccountActivity is only
+  // ever fetched once (on account selection) and never refreshed, so its last
+  // bin's bin_end_at goes stale the moment the SQL day bin rolls over at GMT
+  // midnight. Since "after hours" auto-send waits are armed precisely during
+  // the 00:00-09:00 GMT window, a stale bin_end_at makes getActivityDayEndTime
+  // return an already-passed timestamp, which makes the auto-send arm effect
+  // compute remainingDayMs <= 0 and turn auto-send off instead of waiting for
+  // the window to reopen at 9 am.
+  useEffect(() => {
+    if (!isAuthenticated || !account || !canSendEmails || !selectedSenderAccountId) return
+    if (!senderAccountActivity?.bins?.length) return
+
+    const binEndTime = getCurrentSqlBinEndTime(senderAccountActivity.bins)
+    if (binEndTime === null) return
+
+    let cancelled = false
+    const clientId = account.username
+    const accountId = selectedSenderAccountId
+    const refreshDelay = Math.max(binEndTime - Date.now() + 1000, 1000)
+    const timer = setTimeout(() => {
+      if (senderAccountActivityRefreshInProgressRef.current) return
+
+      senderAccountActivityRefreshInProgressRef.current = true
+      getAccessToken(instance, account, loginRequest)
+        .then((token) => fetchSenderAccountActivity(token, accountId, { clientId }))
+        .then(({ bins, last_send_at }) => {
+          if (cancelled) return
+          setSenderAccountActivity({ bins, last_send_at })
+          setSessionSentCounts((prev) => ({ ...prev, [accountId]: 0 }))
+          setLocalLastSendAts((prev) => ({ ...prev, [accountId]: null }))
+          setScheduledNextSendAt(null)
+        })
+        .catch(() => {})
+        .finally(() => {
+          senderAccountActivityRefreshInProgressRef.current = false
+        })
+    }, refreshDelay)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [isAuthenticated, account, instance, canSendEmails, selectedSenderAccountId, senderAccountActivity])
 
   // Display requirement: "Sent today" and pacing use the cached backend
   // histogram plus successful sends from this page session.
