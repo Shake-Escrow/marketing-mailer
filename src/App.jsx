@@ -806,9 +806,18 @@ export default function App() {
     const targetFireTime = sendableStartTime + baseDelay
     const delayFromNow = Math.max(targetFireTime - scheduleStartTime, 0)
     // If the computed wait is already due, send now and do not apply jitter.
-    const delay = delayFromNow < 1
+    let delay = delayFromNow < 1
       ? 0
       : Math.max(0, delayFromNow + getRandomSendJitterMs(periodMs))
+    // Negative jitter must never pull the fire time earlier than window open:
+    // sendNextRecipient re-checks isWithinGmtSendWindow() and silently aborts
+    // with no reschedule if it fires even a moment before 9 am GMT, stalling
+    // auto-send indefinitely. Clamp so an armed-ahead-of-window send can only
+    // fire at or after windowStartMs.
+    if (!withinWindow) {
+      const minDelayToWindowOpen = Math.max(windowStartMs - scheduleStartTime, 0)
+      delay = Math.max(delay, minDelayToWindowOpen)
+    }
     const nextSendTime = scheduleStartTime + delay
     setScheduledNextSendAt(nextSendTime)
 
