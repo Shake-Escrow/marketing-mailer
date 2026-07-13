@@ -435,7 +435,7 @@ export async function getMe(accessToken) {
  */
 export async function findBouncedEmails(accessToken, options = {}) {
   const top = options.top || 50;
-  const filterParts = [`subject eq 'Delivery Status Notification (Failure)'`];
+  const filterParts = [`(subject eq 'Delivery Status Notification (Failure)' or startswith(subject, 'Undeliverable:'))`];
   if (options.sinceISODate) {
     filterParts.push(`receivedDateTime ge ${options.sinceISODate}`);
   }
