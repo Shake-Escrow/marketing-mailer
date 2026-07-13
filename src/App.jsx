@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMsal, useIsAuthenticated } from '@azure/msal-react'
 import { loginRequest, marketingContactsRequest } from './authConfig'
 import { parseCsvFile, serializeCsv } from '../parseCsv'
-import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, createSenderAccount, deleteSenderAccount, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, fetchSenderAccountActivity, getAccessToken, sendEmail, sendEmailViaAccount, updateSenderAccount, verifySenderAccount } from '../graphApi'
+import { buildMarketingContactPayload, checkMarketingContact, createMarketingContact, createSenderAccount, deleteSenderAccount, fetchAppConfig, fetchContactsActivity, fetchEmailableContacts, fetchSenderAccounts, fetchSenderAccountActivity, getAccessToken, sendEmail, sendEmailViaAccount, updateSenderAccount, verifySenderAccount, findBouncedEmails, bounceMarketingContact } from '../graphApi'
 import Header from './components/Header'
 import SenderAccountManager from './SenderAccountManager'
 import { applyTemplate, buildTemplateVariables, stripUnresolvedTokens } from './utils/template'
@@ -278,6 +278,8 @@ export default function App() {
   const [error, setError] = useState('')
   const [selectedRecipient, setSelectedRecipient] = useState(0)
   const [sending, setSending] = useState(false)
+  const [isScanningBounces, setIsScanningBounces] = useState(false)
+  const [scanBouncesResult, setScanBouncesResult] = useState(null)
   const [sendResults, setSendResults] = useState([])
   const [updatedCsvContent, setUpdatedCsvContent] = useState('')
   const [nvidiaApiKey, setNvidiaApiKey] = useState(null)
@@ -1406,6 +1408,34 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
+  const handleScanBounces = async () => {
+    setIsScanningBounces(true)
+    setScanBouncesResult(null)
+    try {
+      const msGraphToken = await getAccessToken(instance, accounts, loginRequest)
+      const messageHubToken = await getAccessToken(instance, accounts, marketingContactsRequest)
+      
+      const { bounces } = await findBouncedEmails(msGraphToken, { top: 50 })
+      let processed = 0
+      let marked = 0
+      for (const b of bounces) {
+        if (b.failedAddress) {
+          processed++
+          const res = await bounceMarketingContact(messageHubToken, b.failedAddress)
+          if (res.bounced) {
+            marked++
+          }
+        }
+      }
+      setScanBouncesResult(`Found ${bounces.length} bounces, extracted ${processed} addresses, marked ${marked} as rejected.`)
+    } catch (err) {
+      console.error(err)
+      setScanBouncesResult(`Error: ${err.message}`)
+    } finally {
+      setIsScanningBounces(false)
+    }
+  }
+
   return (
     <>
       <Header account={account} isAuthenticated={isAuthenticated} instance={instance} />
@@ -1659,9 +1689,25 @@ export default function App() {
             )}
 
             {canSendEmails && (
-              <button type="button" className="manage-accounts-btn" onClick={() => setShowAccountManager(true)}>
-                Manage accounts
-              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" className="manage-accounts-btn" onClick={() => setShowAccountManager(true)}>
+                  Manage accounts
+                </button>
+                <button 
+                  type="button" 
+                  className="manage-accounts-btn" 
+                  onClick={handleScanBounces} 
+                  disabled={isScanningBounces}
+                >
+                  {isScanningBounces ? 'Scanning...' : 'Scan Bounces'}
+                </button>
+              </div>
+            )}
+            
+            {scanBouncesResult && (
+              <div className="status-banner" style={{ marginTop: '12px', fontSize: '13px' }}>
+                {scanBouncesResult}
+              </div>
             )}
 
             {csvData?.recipients?.length > 0 && (

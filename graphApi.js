@@ -369,6 +369,30 @@ export async function unsubscribeMarketingContact(email) {
   }
 }
 
+export async function bounceMarketingContact(accessToken, email, options = {}) {
+  const apiBaseUrl = getMarketingContactsBaseUrl()
+  const response = await fetch(`${apiBaseUrl}/api/marketing/contacts/bounce`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.clientId ? { 'x-client-id': options.clientId } : {}),
+    },
+    body: JSON.stringify({ email }),
+  })
+
+  const responseBody = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error || `HTTP ${response.status}`)
+  }
+
+  return {
+    bounced: responseBody.bounced !== false,
+    contact: responseBody.contact || null,
+  }
+}
+
 /**
  * Fetches runtime app config from the MessageHub backend.
  * Requires a valid marketingContactsRequest token so the key is
@@ -396,6 +420,104 @@ export async function getMe(accessToken) {
   });
   if (!res.ok) throw new Error('Failed to fetch user info');
   return res.json();
+}
+
+/**
+ * Searches the signed-in user's mailbox for delivery-failure (bounce/NDR)
+ * notifications and extracts the recipient address that failed, when it
+ * can be determined from the message body.
+ * Requires the `Mail.Read` delegated scope.
+ * @param {string} accessToken
+ * @param {{ top?: number, sinceISODate?: string }} [options]
+ *   sinceISODate: only include messages received on/after this ISO 8601
+ *   timestamp (e.g. new Date(Date.now() - 30*86400000).toISOString()).
+ * @returns {{ bounces: { messageId: string, receivedDateTime: string, subject: string, failedAddress: string|null }[] }}
+ */
+export async function findBouncedEmails(accessToken, options = {}) {
+  const top = options.top || 50;
+  const filterParts = [`subject eq 'Delivery Status Notification (Failure)'`];
+  if (options.sinceISODate) {
+    filterParts.push(`receivedDateTime ge ${options.sinceISODate}`);
+  }
+
+  const params = new URLSearchParams({
+    '$filter': filterParts.join(' and '),
+    '$select': 'id,subject,receivedDateTime,body',
+    '$top': String(top),
+  });
+
+  let url = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
+  const bounces = [];
+
+  while (url) {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        // Ask Graph to hand back plain text bodies — much easier and safer
+        // to pattern-match against than the HTML NDR body.
+        Prefer: 'outlook.body-content-type="text"',
+      },
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || `HTTP ${response.status}`);
+    }
+
+    const page = await response.json();
+
+    for (const message of page.value || []) {
+      bounces.push({
+        messageId: message.id,
+        receivedDateTime: message.receivedDateTime,
+        subject: message.subject,
+        failedAddress: extractFailedAddress(message.body?.content || ''),
+      });
+    }
+
+    url = page['@odata.nextLink'] || null;
+  }
+
+  return { bounces };
+}
+
+/**
+ * Best-effort extraction of the recipient address a delivery failure
+ * notification was about. NDR wording varies by mail system (Exchange
+ * Online, Gmail, third-party relays, etc.), so this tries a few common
+ * labeled patterns first and only falls back to "first address in the
+ * body" if none of them match — returning null rather than guessing
+ * wrong is preferred over a confident bad answer.
+ * @param {string} bodyText plain-text NDR body
+ * @returns {string|null}
+ */
+function extractFailedAddress(bodyText) {
+  if (!bodyText) return null;
+
+  const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+  // Phrasing Exchange/Office 365 and most NDR-generating systems use
+  // immediately before (or on the same line as) the address that bounced.
+  const labeledPatterns = [
+    /Your message to ([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+    /wasn't delivered to\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+    /Delivery has failed to these recipients or groups:\s*\n?\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+    /Final-Recipient:\s*rfc822;\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+  ];
+
+  for (const pattern of labeledPatterns) {
+    const match = pattern.exec(bodyText);
+    if (match) return match[1];
+  }
+
+  // Fallback: first address in the body that isn't the bounce system
+  // itself (postmaster/mailer-daemon addresses show up in the same text).
+  const allMatches = bodyText.match(emailPattern) || [];
+  const candidate = allMatches.find(
+    (address) => !/^(postmaster|mailer-daemon)@/i.test(address)
+  );
+
+  return candidate || null;
 }
 
 /**
