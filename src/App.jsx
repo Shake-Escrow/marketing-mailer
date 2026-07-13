@@ -1412,8 +1412,8 @@ export default function App() {
     setIsScanningBounces(true)
     setScanBouncesResult(null)
     try {
-      const msGraphToken = await getAccessToken(instance, accounts, loginRequest)
-      const messageHubToken = await getAccessToken(instance, accounts, marketingContactsRequest)
+      const msGraphToken = await getAccessToken(instance, account, loginRequest)
+      const messageHubToken = await getAccessToken(instance, account, marketingContactsRequest)
       
       const { bounces } = await findBouncedEmails(msGraphToken, { top: 50 })
       let processed = 0
