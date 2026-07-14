@@ -1413,7 +1413,6 @@ export default function App() {
     setScanBouncesResult(null)
     try {
       const msGraphToken = await getAccessToken(instance, account, loginRequest)
-      const messageHubToken = await getAccessToken(instance, account, marketingContactsRequest)
       
       const { bounces } = await findBouncedEmails(msGraphToken, { top: 50 })
       let processed = 0
@@ -1421,7 +1420,7 @@ export default function App() {
       for (const b of bounces) {
         if (b.failedAddress) {
           processed++
-          const res = await bounceMarketingContact(messageHubToken, b.failedAddress)
+          const res = await bounceMarketingContact(msGraphToken, b.failedAddress)
           if (res.bounced) {
             marked++
           }
